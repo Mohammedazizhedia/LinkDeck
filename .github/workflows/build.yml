@@ -23,27 +23,14 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Generate wrapper (no binary jar in repo)
+      - name: Generate wrapper
         run: gradle wrapper --gradle-version 8.9
-
-      - name: Decode signing keystore (optional)
-        if: ${{ secrets.LINKDECK_KEYSTORE_BASE64 != '' }}
-        run: |
-          echo "${{ secrets.LINKDECK_KEYSTORE_BASE64 }}" | base64 -d > linkdeck-release.keystore
-          cat > keystore.properties <<EOF
-          storeFile=linkdeck-release.keystore
-          storePassword=${{ secrets.LINKDECK_STORE_PASSWORD }}
-          keyAlias=${{ secrets.LINKDECK_KEY_ALIAS }}
-          keyPassword=${{ secrets.LINKDECK_KEY_PASSWORD }}
-          EOF
 
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --stacktrace
 
-      - name: Build release APK (signed if secrets present)
+      - name: Build release APK
         run: ./gradlew :app:assembleRelease --stacktrace
-        env:
-          LINKDECK_KEYSTORE_FILE: linkdeck-release.keystore
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
