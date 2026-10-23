@@ -3,76 +3,36 @@ package com.linkdeck.core.design
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.vector.PathNode
-import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/**
- * Custom line-art icon set on a 64x64 grid, stroke 2, round caps and joins.
- * Each glyph draws what its feature contains — no generic filled shapes.
- */
+/** Line-art icon set on a 64x64 grid; data uses absolute M/L/H/V/C/Z only. */
 enum class LineIcon(val data: String) {
-    // Phone + tablet linked by a line (devices / launcher motif)
-    DEVICES(
-        "M10 12 h34 a4 4 0 0 1 4 4 v22 a4 4 0 0 1 -4 4 h-34 a4 4 0 0 1 -4 -4 v-22 a4 4 0 0 1 4 -4 z" +
-            "M22 46 h2 M32 46 h2 M44 28 h6 a4 4 0 0 1 4 4 v18 a4 4 0 0 1 -4 4 h-12 a4 4 0 0 1 -4 -4 v-10" +
-            "M56 36 h6 M56 44 h6 M8 32 h4"
-    ),
-    // Screen with a play arrow (mirroring)
-    MIRROR(
-        "M10 12 h44 a2 2 0 0 1 2 2 v26 a2 2 0 0 1 -2 2 h-44 a2 2 0 0 1 -2 -2 v-26 a2 2 0 0 1 2 -2 z" +
-            "M27 20 l14 8 -14 8 z M32 42 v6 M22 52 h20"
-    ),
-    // Folder (files)
-    FILES("M8 20 a4 4 0 0 1 4 -4 h14 l4 6 h26 a4 4 0 0 1 4 4 v22 a4 4 0 0 1 -4 4 h-44 a4 4 0 0 1 -4 -4 z"),
-    // Bell (notifications)
-    NOTIFICATIONS(
-        "M32 10 c9 0 13 6 13 14 v9 l5 8 a2 2 0 0 1 -2 3 h-32 a2 2 0 0 1 -2 -3 l5 -8 v-9 c0 -8 4 -14 13 -14 z" +
-            "M26 47 a6 6 0 0 0 12 0"
-    ),
-    // Chat bubble (messages)
-    MESSAGES("M12 12 h40 a4 4 0 0 1 4 4 v20 a4 4 0 0 1 -4 4 h-24 l-10 8 v-8 h-6 a4 4 0 0 1 -4 -4 v-20 a4 4 0 0 1 4 -4 z M20 22 h24 M20 30 h16"),
-    // Handset (calls)
-    CALLS("M18 8 c5 0 9 7 9 11 0 4 -6 6 -6 11 0 9 13 22 22 22 5 0 7 -6 11 -6 4 0 11 4 11 9 0 9 -10 13 -18 13 -19 0 -40 -21 -40 -40 0 -8 4 -20 11 -20 z"),
-    // App grid (app launcher)
-    APPS("M12 12 h16 a2 2 0 0 1 2 2 v16 a2 2 0 0 1 -2 2 h-16 a2 2 0 0 1 -2 -2 v-16 a2 2 0 0 1 2 -2 z" +
-        "M36 12 h16 a2 2 0 0 1 2 2 v16 a2 2 0 0 1 -2 2 h-16 a2 2 0 0 1 -2 -2 v-16 a2 2 0 0 1 2 -2 z" +
-        "M12 36 h16 a2 2 0 0 1 2 2 v16 a2 2 0 0 1 -2 2 h-16 a2 2 0 0 1 -2 -2 v-16 a2 2 0 0 1 2 -2 z" +
-        "M36 36 h16 a2 2 0 0 1 2 2 v16 a2 2 0 0 1 -2 2 h-16 a2 2 0 0 1 -2 -2 v-16 a2 2 0 0 1 2 -2 z"),
-    // Gear (settings)
-    SETTINGS(
-        "M32 26 a6 6 0 1 0 0.01 0 z" +
-            "M32 12 v6 M32 46 v6 M16 22 l4 4 M44 38 l4 4 M48 22 l-4 4 M20 38 l-4 4 M14 32 h6 M44 32 h6"
-    ),
-    // Plug (connection)
-    CONNECTION("M24 10 v12 M40 10 v12 M24 22 h16 v8 a8 8 0 0 1 -16 0 z M32 38 v8 M22 50 h20 l-3 -6 h-14 z"),
-    // QR code
-    QR("M12 12 h14 v14 h-14 z M18 18 h2 M38 12 h14 v14 h-14 z M44 18 h2 M12 38 h14 v14 h-14 z M18 44 h2" +
-        "M38 38 h4 v4 h-4 z M46 38 h4 v4 h-4 z M38 46 h4 v4 h-4 z M46 46 h4 v4 h-4 z"),
-    // Pause
-    PAUSE("M22 14 v36 M42 14 v36"),
-    // Power / disconnect
-    POWER("M32 12 v16 M22 20 a16 16 0 1 0 20 0"),
-    // Home
-    HOME("M10 30 L32 12 L54 30 M16 28 v22 h12 v-12 h8 v12 h12 v-22"),
-    // Search
-    SEARCH("M28 14 a14 14 0 1 0 0.01 0 z M39 39 l11 11"),
-    // Info
-    INFO("M32 12 a20 20 0 1 0 0.01 0 z M32 26 v14 M32 22 v0.01"),
-    // Check
-    CHECK("M12 34 l14 14 L54 18"),
+    DEVICES("M6 10 H46 V40 H6 Z M40 30 H58 V56 H40 Z M26 40 V46 H40 V30 M46 52 H52"),
+    MIRROR("M8 10 H56 V40 H8 Z M26 18 L42 26 L26 34 Z M32 40 V48 M22 54 H42"),
+    FILES("M8 20 H22 L28 28 H56 V48 H8 Z"),
+    NOTIFICATIONS("M32 10 C42 10 46 18 46 26 V34 L52 44 H12 L18 34 V26 C18 18 22 10 32 10 Z M26 46 C26 52 38 52 38 46"),
+    MESSAGES("M10 12 H54 V36 H28 L16 46 V36 H10 Z"),
+    CALLS("M14 8 C22 8 28 18 28 24 C28 28 22 30 22 34 C22 44 32 52 42 52 C46 52 48 46 52 46 C58 46 62 52 62 58 C62 62 54 64 46 64 C28 64 8 46 8 26 C8 16 10 8 14 8 Z"),
+    APPS("M12 12 H30 V30 H12 Z M34 12 H52 V30 H34 Z M12 34 H30 V52 H12 Z M34 34 H52 V52 H34 Z"),
+    SETTINGS("M32 24 C36.4 24 40 27.6 40 32 C40 36.4 36.4 40 32 40 C27.6 40 24 36.4 24 32 C24 27.6 27.6 24 32 24 Z M32 10 V18 M32 46 V54 M10 32 H18 M46 32 H54 M16 16 L22 22 M42 42 L48 48 M48 16 L42 22 M22 42 L16 48"),
+    CONNECTION("M22 10 V20 M40 10 V20 M22 20 H40 V28 C40 34 36 38 31 38 C26 38 22 34 22 28 Z M31 38 V48 M21 56 H41 L38 48 H24 Z"),
+    QR("M12 12 H28 V28 H12 Z M18 18 H23 V23 H18 Z M36 12 H52 V28 H36 Z M42 18 H47 V23 H42 Z M12 36 H28 V52 H12 Z M18 42 H23 V47 H18 Z M36 36 H40 V40 H36 Z M44 36 H48 V40 H44 Z M36 44 H40 V48 H36 Z M44 44 H48 V48 H44 Z"),
+    PAUSE("M22 14 V50 M42 14 V50"),
+    POWER("M32 14 C41 14 50 22 50 32 C50 42 41 50 32 50 C22 50 14 42 14 32 C14 22 22 14 32 14 Z M32 8 V28"),
+    HOME("M8 30 L32 10 L56 30 M14 26 V54 H26 V42 H38 V54 H50 V26"),
+    SEARCH("M28 14 C36 14 42 20 42 28 C42 36 36 42 28 42 C20 42 14 36 14 28 C14 20 20 14 28 14 Z M38 38 L52 52"),
+    INFO("M32 12 C43 12 52 21 52 32 C52 43 43 52 32 52 C21 52 12 43 12 32 C12 21 21 12 32 12 Z M32 26 V40 M32 20 V21"),
+    CHECK("M12 34 L26 48 L52 20"),
 }
 
-/**
- * Draws a [LineIcon] with the active stroke setting (thin / regular / bold).
- */
 @Composable
 fun LineIconView(
     icon: LineIcon,
@@ -81,10 +41,8 @@ fun LineIconView(
     size: Dp = 24.dp,
 ) {
     val strokeSetting = LocalIconStroke.current
-    val pathNodes: List<PathNode> = rememberIconNodes(icon)
+    val path = remember(icon) { parseLinePath(icon.data) }
     Canvas(modifier.size(size)) {
-        val path = Path()
-        pathNodes.forEach { it.addPath(path) }
         drawPath(
             path = path,
             color = tint,
@@ -97,6 +55,29 @@ fun LineIconView(
     }
 }
 
-@Composable
-private fun rememberIconNodes(icon: LineIcon): List<PathNode> =
-    androidx.compose.runtime.remember(icon) { addPathNodes(icon.data) }
+private fun parseLinePath(data: String): Path {
+    val path = Path()
+    val tokens = data.split(Regex("\\s+")).filter { it.isNotEmpty() }
+    var i = 0
+    var x = 0f
+    var y = 0f
+    var startX = 0f
+    var startY = 0f
+    fun num(): Float = tokens[++i].toFloat()
+    while (i < tokens.size) {
+        when (tokens[i]) {
+            "M" -> { x = num(); y = num(); path.moveTo(x, y); startX = x; startY = y }
+            "L" -> { x = num(); y = num(); path.lineTo(x, y) }
+            "H" -> { x = num(); path.lineTo(x, y) }
+            "V" -> { y = num(); path.lineTo(x, y) }
+            "C" -> {
+                val x1 = num(); val y1 = num(); val x2 = num(); val y2 = num()
+                x = num(); y = num()
+                path.cubicTo(x1, y1, x2, y2, x, y)
+            }
+            "Z" -> { path.close(); x = startX; y = startY }
+        }
+        i++
+    }
+    return path
+}
