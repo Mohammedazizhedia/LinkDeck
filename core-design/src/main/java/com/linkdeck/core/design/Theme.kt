@@ -1,6 +1,5 @@
 package com.linkdeck.core.design
 
-import android.graphics.Typeface
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -13,6 +12,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
@@ -61,7 +61,7 @@ private fun AccentPalette.toDarkScheme() = darkColorScheme(
 fun LinkDeckTheme(
     mode: ThemeMode = ThemeMode.SYSTEM,
     accent: AccentTheme = AccentTheme.DEFAULT,
-    fontTypeface: Typeface? = null,
+    fontFamily: FontFamily = FontFamily.Default,
     fontScale: Float = 1f,
     fontWeight: Int? = null,
     cornerScale: Float = 1f,
@@ -94,7 +94,7 @@ fun LinkDeckTheme(
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = linkDeckTypography(fontTypeface, fontScale, fontWeight),
+            typography = linkDeckTypography(fontFamily, fontScale, fontWeight),
             content = content,
         )
     }
