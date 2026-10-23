@@ -1,5 +1,6 @@
 package com.linkdeck.core.design
 
+import android.graphics.Typeface
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -15,12 +16,10 @@ import androidx.compose.ui.platform.LocalContext
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
-/** Live appearance knobs; provided to the whole tree so every screen re-themes instantly. */
 val LocalTints = compositionLocalOf { SemanticTintsPalette.light(Color(0xFFD6E7F9), Color(0xFF0B3E6F)) }
 val LocalCornerScale = compositionLocalOf { 1f }
 val LocalIconStroke = compositionLocalOf { IconStroke.REGULAR }
 
-/** Design-system facade. NEVER hardcode colors/sizes in screens — use these. */
 object LinkDeckTheme {
     val tints: SemanticTints @Composable get() = LocalTints.current
     val spacing: Spacing get() = Spacing
@@ -58,15 +57,11 @@ private fun AccentPalette.toDarkScheme() = darkColorScheme(
     outline = NeutralColors.DarkOutline,
 )
 
-/**
- * Root theme for the whole app. All appearance state comes in as parameters so
- * the Settings screen can apply changes live without a restart.
- */
 @Composable
 fun LinkDeckTheme(
     mode: ThemeMode = ThemeMode.SYSTEM,
     accent: AccentTheme = AccentTheme.DEFAULT,
-    fontFamily: FontFamily = FontFamily.Default,
+    fontTypeface: Typeface? = null,
     fontScale: Float = 1f,
     fontWeight: Int? = null,
     cornerScale: Float = 1f,
@@ -99,7 +94,7 @@ fun LinkDeckTheme(
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = linkDeckTypography(fontFamily, fontScale, fontWeight),
+            typography = linkDeckTypography(fontTypeface, fontScale, fontWeight),
             content = content,
         )
     }
