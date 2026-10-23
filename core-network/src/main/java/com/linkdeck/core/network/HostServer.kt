@@ -12,7 +12,6 @@ import io.ktor.websocket.*
 import java.net.ServerSocket
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,7 +19,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 sealed interface HostEvent {
     data class ControllerConnected(val deviceId: String) : HostEvent
@@ -32,7 +30,7 @@ class HostServer(
     private val identity: TlsIdentity,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
-    private var server: EmbeddedServer<CIOApplicationEngine, CIOEngineConfiguration>? = null
+    private var server: ApplicationEngine? = null
 
     private val _events = MutableStateFlow<HostEvent?>(null)
     val events: StateFlow<HostEvent?> = _events
@@ -92,11 +90,7 @@ class HostServer(
         val engine = embeddedServer(CIO, environment)
         server = engine
         engine.start(wait = false)
-        boundPort = runBlocking {
-            engine.resolvedConnectors()
-                .filterIsInstance<EngineSSLConnectorConfig>()
-                .firstOrNull()?.port ?: port
-        }
+        boundPort = port
         return boundPort
     }
 
@@ -215,7 +209,7 @@ class HostServer(
     }
 
     fun stop() {
-        server?.let { runCatching { it.stop(500L, 1500L, TimeUnit.MILLISECONDS) } }
+        server?.let { runCatching { it.stop(500L, 1500L) } }
         server = null
         boundPort = -1
         sessions.clear()
