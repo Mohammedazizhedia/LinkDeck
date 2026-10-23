@@ -12,6 +12,7 @@ import io.ktor.websocket.*
 import java.net.ServerSocket
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,48 +20,39 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 sealed interface HostEvent {
     data class ControllerConnected(val deviceId: String) : HostEvent
     data class ControllerDisconnected(val deviceId: String) : HostEvent
 }
 
-/**
- * TLS WebSocket server that runs on the HOST (phone). Accepts the short-lived
- * QR token once, then issues a long-lived device token for silent reconnects.
- */
+/** TLS WebSocket server on the HOST; ktor 2.3 environment-based connector DSL. */
 class HostServer(
     private val identity: TlsIdentity,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
-    private var server: EmbeddedServer<CIOApplicationEngine, CIOApplicationEngine.Configuration>? = null
+    private var server: EmbeddedServer<CIOApplicationEngine, CIOEngineConfiguration>? = null
 
     private val _events = MutableStateFlow<HostEvent?>(null)
     val events: StateFlow<HostEvent?> = _events
 
-    /** Short-lived QR token (valid ~2 minutes). */
     @Volatile private var qrToken: String? = null
     @Volatile private var qrTokenExpiresAt: Long = 0L
 
-    /** Long-lived device tokens for already-paired controllers. */
     private val deviceTokens = ConcurrentHashMap<String, String>()
-
-    /** Currently connected controller sessions. */
     private val sessions = ConcurrentHashMap<String, DefaultWebSocketServerSession>()
 
-    /** Set by the app: executes host commands (status, sms, launch app, ...). */
     @Volatile
     var commandHandler: ((String) -> String?)? = null
 
-    val connectedCount: Int get() = sessions.size
-    val isRunning: Boolean get() = server != null
-
-    /** The TLS port the server is actually listening on (valid after [start]). */
     @Volatile
     var boundPort: Int = -1
         private set
 
-    /** Creates a new one-time pairing token valid for [validityMillis]. */
+    val connectedCount: Int get() = sessions.size
+    val isRunning: Boolean get() = server != null
+
     fun newPairingToken(validityMillis: Long = 120_000L): String {
         val token = UUID.randomUUID().toString().replace("-", "")
         qrToken = token
@@ -77,16 +69,14 @@ class HostServer(
 
     fun revokeDevice(deviceId: String) {
         deviceTokens.remove(deviceId)
-        sessions.remove(deviceId)?.let { runCatching { it.close() } }
+        sessions.remove(deviceId)?.let { s -> scope.launch { runCatching { s.close() } } }
     }
 
     fun start(): Int {
         check(server == null) { "HostServer already started" }
         val port = findFreePort()
 
-        val engine = embeddedServer(CIO, configure = {
-            // Plain connector is only used to answer /ping on LAN discovery checks.
-            connector { host = "0.0.0.0"; port = -1 }
+        val environment = applicationEngineEnvironment {
             sslConnector(
                 keyStore = identity.keyStore,
                 keyAlias = TlsIdentity.KEY_ALIAS,
@@ -96,59 +86,65 @@ class HostServer(
                 host = "0.0.0.0"
                 this.port = port
             }
-        }) {
-            install(ContentNegotiation) { json() }
-            install(WebSockets)
-            routing {
-                get("/ping") { call.respondText("linkdeck-ok") }
-                webSocket("/ws") {
-                    val deviceId = authenticate() ?: return@webSocket
-                    sessions[deviceId] = this
-                    _events.value = HostEvent.ControllerConnected(deviceId)
-                    try {
-                        for (frame in incoming) {
-                            when (frame) {
-                                is Frame.Text -> handleText(deviceId, frame.readText())
-                                else -> Unit
-                            }
+            module { appModule() }
+        }
+
+        val engine = embeddedServer(CIO, environment)
+        server = engine
+        engine.start(wait = false)
+        boundPort = runBlocking {
+            engine.resolvedConnectors()
+                .filterIsInstance<EngineSSLConnectorConfig>()
+                .firstOrNull()?.port ?: port
+        }
+        return boundPort
+    }
+
+    private fun Application.appModule() {
+        install(ContentNegotiation) { json() }
+        install(WebSockets)
+        routing {
+            get("/ping") { call.respondText("linkdeck-ok") }
+            webSocket("/ws") {
+                val deviceId = authenticate() ?: return@webSocket
+                sessions[deviceId] = this
+                _events.value = HostEvent.ControllerConnected(deviceId)
+                try {
+                    for (frame in incoming) {
+                        when (frame) {
+                            is Frame.Text -> handleText(deviceId, frame.readText())
+                            else -> Unit
                         }
-                    } finally {
-                        sessions.remove(deviceId)
-                        _events.value = HostEvent.ControllerDisconnected(deviceId)
                     }
+                } finally {
+                    sessions.remove(deviceId)
+                    _events.value = HostEvent.ControllerDisconnected(deviceId)
                 }
             }
         }
-        server = engine
-        engine.start(wait = false)
-        boundPort = engine.resolvedConnectors()
-            .filterIsInstance<EngineSSLConnectorConfig>()
-            .firstOrNull()?.port ?: port
-        return boundPort
     }
 
     private suspend fun DefaultWebSocketServerSession.authenticate(): String? {
         val first = incoming.tryReceive().getOrNull() as? Frame.Text ?: return reject("no auth frame")
-        val auth = runCatching { kotlinx.serialization.json.Json.decodeFromString<AuthMessage>(first.readText()) }.getOrNull()
-            ?: return reject("malformed auth")
+        val auth = runCatching {
+            kotlinx.serialization.json.Json.decodeFromString<AuthMessage>(first.readText())
+        }.getOrNull() ?: return reject("malformed auth")
         val deviceId = UUID.randomUUID().toString().replace("-", "")
 
-        when {
-            // Fresh QR pairing: token must be valid and unclaimed.
+        return when {
             isQrTokenValid(auth.token) -> {
-                qrToken = null // one-time use
+                qrToken = null
                 val deviceToken = UUID.randomUUID().toString().replace("-", "")
                 deviceTokens[deviceId] = deviceToken
                 sendSerialized(AuthOk(deviceId = deviceId, deviceToken = deviceToken))
-                return deviceId
+                deviceId
             }
-            // Reconnect from an already-paired device.
             deviceTokens.entries.firstOrNull { it.value == auth.token } != null -> {
                 val knownId = deviceTokens.entries.first { it.value == auth.token }.key
                 sendSerialized(AuthOk(deviceId = knownId, deviceToken = auth.token))
-                return knownId
+                knownId
             }
-            else -> return reject("invalid or expired token")
+            else -> reject("invalid or expired token")
         }
     }
 
@@ -160,7 +156,7 @@ class HostServer(
 
     private fun handleText(deviceId: String, text: String) {
         if (text.contains("\"ping\"")) {
-            runCatching { sessions[deviceId]?.send(Frame.Text(text)) }
+            scope.launch { runCatching { sessions[deviceId]?.send(Frame.Text(text)) } }
             return
         }
         val env = runCatching {
@@ -209,7 +205,6 @@ class HostServer(
         scope.launch { runCatching { sessions[deviceId]?.send(Frame.Text(msg)) } }
     }
 
-    /** Push an event to every connected controller (notifications, clipboard, calls, frames). */
     fun broadcast(type: String, payloadJson: String) {
         val msg = runCatching {
             kotlinx.serialization.json.Json.encodeToString(Envelope.serializer(), Envelope(0, type, payloadJson))
@@ -220,19 +215,16 @@ class HostServer(
     }
 
     fun stop() {
-        server?.let { runCatching { it.stop(500, 1500) } }
+        server?.let { runCatching { it.stop(500L, 1500L, TimeUnit.MILLISECONDS) } }
         server = null
         boundPort = -1
         sessions.clear()
     }
 
     private fun findFreePort(): Int {
-        // Try to grab a free port in the dynamic range; fall back to a fixed one.
         for (attempt in 0 until 20) {
             val candidate = 28000 + Random.nextInt(0, 20000)
-            runCatching {
-                ServerSocket(candidate).use { return candidate }
-            }
+            runCatching { ServerSocket(candidate).use { return candidate } }
         }
         return ServerSocket(0).use { it.localPort }
     }
