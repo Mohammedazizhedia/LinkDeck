@@ -119,7 +119,6 @@ class ConnectionManager(
         val client = HttpClient(CIO) {
             install(WebSockets)
             engine {
-                @OptIn(ExperimentalHttpClientApi::class)
                 https {
                     this.trustManager = trustManager
                     serverName = "linkdeck"
