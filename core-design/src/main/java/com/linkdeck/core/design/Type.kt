@@ -4,9 +4,8 @@ import android.content.Context
 import android.graphics.Typeface
 import android.os.Build
 import androidx.compose.material3.Typography
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
@@ -21,35 +20,31 @@ enum class IconStroke(val width: Float) {
     THIN(1.5f), REGULAR(2f), BOLD(2.75f);
 }
 
-/**
- * Loads a bundled variable font from assets (or the system font for [AppFont.SYSTEM]).
- * Falls back to the default family gracefully when the TTF is not bundled yet —
- * drop cairo.ttf / tajawal.ttf / amiri.ttf into app/src/main/assets/fonts to enable them.
- */
-fun loadAppFontFamily(context: Context, font: AppFont, weight: Int?): FontFamily {
-    if (font == AppFont.SYSTEM) return FontFamily.Default
+@Suppress("DEPRECATION")
+fun loadAppTypeface(context: Context, font: AppFont, weight: Int?): Typeface? {
+    if (font == AppFont.SYSTEM) return null
     val base: Typeface = runCatching {
         if (Build.VERSION.SDK_INT >= 26) {
             Typeface.Builder(context.assets, "fonts/${font.fileName}").build()
         } else {
             Typeface.createFromAsset(context.assets, "fonts/${font.fileName}")
         }
-    }.getOrNull() ?: return FontFamily.Default
-
-    val weighted: Typeface = if (weight != null && Build.VERSION.SDK_INT >= 28) {
+    }.getOrNull() ?: return null
+    return if (weight != null && Build.VERSION.SDK_INT >= 28) {
         Typeface.create(base, weight, false)
     } else base
-    return FontFamily(Font(weighted))
 }
 
-/**
- * Typography with the exact sizes from the design spec. [fontScale] multiplies
- * every size; [weight] drives variable-font weight on API 28+.
- */
-fun linkDeckTypography(family: FontFamily, fontScale: Float, weight: Int?): Typography {
+@Suppress("DEPRECATION")
+fun linkDeckTypography(typeface: Typeface?, fontScale: Float, weight: Int?): Typography {
+    val platformStyle = typeface?.let { PlatformTextStyle(includeFontPadding = null, typeface = it) }
     val w = FontWeight(weight ?: 500)
     fun s(sp: Int) = (sp * fontScale).sp
-    fun style(sizeSp: Int) = TextStyle(fontFamily = family, fontSize = s(sizeSp), fontWeight = w)
+    fun style(sizeSp: Int) = TextStyle(
+        fontSize = s(sizeSp),
+        fontWeight = w,
+        platformStyle = platformStyle,
+    )
     return Typography(
         headlineMedium = style(22),
         headlineSmall = style(20),
