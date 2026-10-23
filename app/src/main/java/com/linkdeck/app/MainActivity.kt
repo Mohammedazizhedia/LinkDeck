@@ -22,7 +22,7 @@ import com.linkdeck.core.design.ThemeMode
 import com.linkdeck.core.design.AppFont
 import com.linkdeck.core.design.IconStroke
 import com.linkdeck.core.design.LinkDeckTheme
-import com.linkdeck.core.design.loadAppTypeface
+import com.linkdeck.core.design.loadAppFontFamily
 import com.linkdeck.app.settings.AppLanguage
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
             val iconStroke by vm.iconStroke.collectAsState()
 
             val context = LocalContext.current
-            val typeface = loadAppTypeface(context, font, fontWeight)
+            val family = loadAppFontFamily(context, font, fontWeight)
 
             // Recreate the activity when the language override changes so the new
             // locale is applied through LocaleHelper at attach time.
@@ -70,7 +70,7 @@ class MainActivity : ComponentActivity() {
             LinkDeckTheme(
                 mode = themeMode,
                 accent = accent,
-                fontTypeface = typeface,
+                fontFamily = family,
                 fontScale = fontScale,
                 fontWeight = fontWeight,
                 cornerScale = cornerScale,
