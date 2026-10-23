@@ -1,13 +1,13 @@
 package com.linkdeck.core.design
 
 import android.content.Context
-import android.graphics.Typeface
-import android.os.Build
 import androidx.compose.material3.Typography
-import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import java.io.File
 
 enum class AppFont(val fileName: String) {
     CAIRO("cairo.ttf"),
@@ -20,31 +20,33 @@ enum class IconStroke(val width: Float) {
     THIN(1.5f), REGULAR(2f), BOLD(2.75f);
 }
 
-@Suppress("DEPRECATION")
-fun loadAppTypeface(context: Context, font: AppFont, weight: Int?): Typeface? {
-    if (font == AppFont.SYSTEM) return null
-    val base: Typeface = runCatching {
-        if (Build.VERSION.SDK_INT >= 26) {
-            Typeface.Builder(context.assets, "fonts/${font.fileName}").build()
-        } else {
-            Typeface.createFromAsset(context.assets, "fonts/${font.fileName}")
-        }
-    }.getOrNull() ?: return null
-    return if (weight != null && Build.VERSION.SDK_INT >= 28) {
-        Typeface.create(base, weight, false)
-    } else base
+/**
+ * Loads a bundled font from assets into app storage once, then builds a
+ * Compose FontFamily from the file (official API for runtime-loaded fonts).
+ * Falls back to the system font when the TTF is not bundled yet.
+ */
+fun loadAppFontFamily(context: Context, font: AppFont, weight: Int?): FontFamily {
+    if (font == AppFont.SYSTEM) return FontFamily.Default
+    val target = File(context.filesDir, "fonts/${font.fileName}")
+    if (!target.exists()) {
+        val copied = runCatching {
+            target.parentFile?.mkdirs()
+            context.assets.open("fonts/${font.fileName}").use { input ->
+                target.outputStream().use { input.copyTo(it) }
+            }
+        }.isSuccess
+        if (!copied) return FontFamily.Default
+    }
+    return runCatching {
+        FontFamily(Font(file = target, weight = FontWeight(weight ?: 500)))
+    }.getOrDefault(FontFamily.Default)
 }
 
-@Suppress("DEPRECATION")
-fun linkDeckTypography(typeface: Typeface?, fontScale: Float, weight: Int?): Typography {
-    val platformStyle = typeface?.let { PlatformTextStyle(includeFontPadding = null, typeface = it) }
+/** Typography with the exact sizes from the design spec; [fontScale] multiplies every size. */
+fun linkDeckTypography(family: FontFamily, fontScale: Float, weight: Int?): Typography {
     val w = FontWeight(weight ?: 500)
     fun s(sp: Int) = (sp * fontScale).sp
-    fun style(sizeSp: Int) = TextStyle(
-        fontSize = s(sizeSp),
-        fontWeight = w,
-        platformStyle = platformStyle,
-    )
+    fun style(sizeSp: Int) = TextStyle(fontFamily = family, fontSize = s(sizeSp), fontWeight = w)
     return Typography(
         headlineMedium = style(22),
         headlineSmall = style(20),
