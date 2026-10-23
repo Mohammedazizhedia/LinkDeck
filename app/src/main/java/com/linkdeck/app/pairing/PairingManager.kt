@@ -18,7 +18,6 @@ import com.linkdeck.core.network.TrustedDevice
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
-import io.ktor.client.engine.cio.ExperimentalHttpClientApi
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.http.HttpMethod
@@ -132,7 +131,6 @@ class PairingManager @Inject constructor(
             val client = HttpClient(CIO) {
                 install(WebSockets)
                 engine {
-                    @OptIn(ExperimentalHttpClientApi::class)
                     https {
                         this.trustManager = trustManager
                         serverName = "linkdeck"
