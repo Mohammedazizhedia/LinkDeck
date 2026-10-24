@@ -11,8 +11,10 @@ import java.io.File
 
 enum class AppFont(val fileName: String) {
     CAIRO("cairo.ttf"),
-    TAJAWAL("tajawal.ttf"),
-    AMIRI("amiri.ttf"),
+    IBM_PLEX("ibm.ttf"),
+    MADIKA("madika.ttf"),
+    BASSEET("basseet.ttf"),
+    CAMEL("camel.ttf"),
     SYSTEM("");
 }
 
