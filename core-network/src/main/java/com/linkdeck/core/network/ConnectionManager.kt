@@ -1,11 +1,12 @@
 package com.linkdeck.core.network
 
 import io.ktor.client.*
-import io.ktor.client.engine.cio.*
+import io.ktor.client.engine.okhttp.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.websocket.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+import javax.net.ssl.SSLContext
 import kotlin.math.min
 import kotlin.math.pow
 import kotlinx.coroutines.CompletableDeferred
@@ -30,7 +31,7 @@ sealed interface ConnectionState {
 /**
  * CONTROLLER-side connection manager: pinned-TLS WebSocket (wss://) with
  * automatic reconnect, heartbeat, incoming-event SharedFlow, and id-routed
- * request/response for files and host commands.
+ * request/response. OkHttp engine for rock-solid TLS with custom pinning.
  */
 class ConnectionManager(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
@@ -113,17 +114,24 @@ class ConnectionManager(
         }
     }
 
-    private suspend fun openSession(device: TrustedDevice) {
-        val trustManager = PinnedTrustManager(setOf(device.fingerprint))
-        val client = HttpClient(CIO) {
+    private fun pinnedClient(trustManager: PinnedTrustManager): HttpClient {
+        val sslContext = SSLContext.getInstance("TLS").apply {
+            init(null, arrayOf(trustManager), null)
+        }
+        return HttpClient(OkHttp) {
             install(WebSockets)
             engine {
-                https {
-                    this.trustManager = trustManager
-                    serverName = "linkdeck"
+                config {
+                    sslSocketFactory(sslContext.socketFactory, trustManager)
+                    hostnameVerifier { _, _ -> true }
                 }
             }
         }
+    }
+
+    private suspend fun openSession(device: TrustedDevice) {
+        val trustManager = PinnedTrustManager(setOf(device.fingerprint))
+        val client = pinnedClient(trustManager)
         try {
             client.webSocket(urlString = "wss://${device.ip}:${device.port}/ws") {
                 session = this
