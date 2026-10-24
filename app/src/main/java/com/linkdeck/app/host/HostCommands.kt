@@ -1,6 +1,5 @@
 package com.linkdeck.app.host
 
-import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
@@ -10,15 +9,13 @@ import android.os.Environment
 import android.provider.Settings
 import android.telecom.TelecomManager
 import android.telephony.SmsManager
-import android.telephony.TelephonyManager
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
 import com.linkdeck.app.service.LinkDeckNotificationListener
 import com.linkdeck.core.network.CmdReq
 import com.linkdeck.core.network.CmdRes
 import com.linkdeck.core.network.HostBridge
-import com.linkdeck.core.network.ProtoJson
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 
 @Serializable
 data class StatusInfo(
@@ -34,11 +31,7 @@ data class StatusInfo(
 @Serializable
 data class SimpleItem(val id: String, val title: String, val subtitle: String)
 
-/**
- * HOST-side command executor. The controller sends CmdReq envelopes; the host
- * answers with CmdRes. Anything impossible on stock Android returns a clear
- * error string instead of failing silently.
- */
+/** HOST-side command executor. Impossible-on-stock actions return a clear error. */
 object HostCommands {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
@@ -61,22 +54,38 @@ object HostCommands {
         "contacts_list" -> contactsList(context)
         "apps_list" -> appsList(context)
         "launch_app" -> launchApp(context, arg(args, "package"))
-        "dial" -> { runCatching { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + arg(args, "number"))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }; CmdRes(true) }
+        "dial" -> {
+            runCatching {
+                context.startActivity(
+                    Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + arg(args, "number")))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+            CmdRes(true)
+        }
         "answer_call" -> answerCall(context)
         "end_call" -> endCall(context)
-        "notif_dismiss" -> { (HostBridge.notificationListener as? LinkDeckNotificationListener)?.dismiss(arg(args, "key")); CmdRes(true) }
+        "notif_dismiss" -> {
+            (HostBridge.notificationListener as? LinkDeckNotificationListener)?.dismiss(arg(args, "key"))
+            CmdRes(true)
+        }
         "notif_reply" -> {
-            val ok = (HostBridge.notificationListener as? LinkDeckNotificationListener)?.reply(arg(args, "key"), arg(args, "text")) == true
+            val ok = (HostBridge.notificationListener as? LinkDeckNotificationListener)
+                ?.reply(arg(args, "key"), arg(args, "text")) == true
             CmdRes(ok, error = if (ok) "" else "reply_unavailable")
         }
         "notif_snapshot" -> {
             val items = (HostBridge.notificationListener as? LinkDeckNotificationListener)?.snapshot().orEmpty()
-            CmdRes(true, json.encodeToString(ListSerializer(NotifPushLite.serializer()), items.map { it.toLite() }))
+            CmdRes(true, json.encodeToString(ListSerializer(NotifLite.serializer()), items.map { it.toLite() }))
         }
         "set_volume" -> {
             val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             val level = arg(args, "level").toIntOrNull() ?: return CmdRes(false, error = "bad_args")
-            am.setStreamVolume(AudioManager.STREAM_MUSIC, level.coerceIn(0, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)), 0)
+            am.setStreamVolume(
+                AudioManager.STREAM_MUSIC,
+                level.coerceIn(0, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)),
+                0,
+            )
             CmdRes(true)
         }
         "set_brightness" -> {
@@ -87,34 +96,44 @@ object HostCommands {
         }
         "wake" -> wake(context)
         "lock" -> lock(context)
-        "inject_key" -> injectKey(context, arg(args, "key")) // back|home|recents
-        "inject_tap" -> injectTap(context, arg(args, "x").toFloatOrNull() ?: 0f, arg(args, "y").toFloatOrNull() ?: 0f)
+        "inject_key" -> injectKey(context, arg(args, "key"))
+        "inject_tap" -> injectTap(
+            context,
+            arg(args, "x").toFloatOrNull() ?: 0f,
+            arg(args, "y").toFloatOrNull() ?: 0f,
+        )
         "mirror_request" -> {
-            // Consent-first: the host user approves via the system projection dialog.
             com.linkdeck.app.mirror.MirrorConsentActivity.request(context)
             CmdRes(true)
         }
-        "mirror_stop" -> { com.linkdeck.app.mirror.ScreenCaptureService.stop(context); CmdRes(true) }
+        "mirror_stop" -> {
+            com.linkdeck.app.mirror.ScreenCaptureService.stop(context)
+            CmdRes(true)
+        }
         else -> CmdRes(false, error = "unknown_cmd")
     }
 
     @Serializable
-    private data class NotifPushLite(val key: String, val packageName: String, val title: String, val text: String, val whenMs: Long, val canReply: Boolean)
+    private data class NotifLite(val key: String, val packageName: String, val title: String, val text: String, val whenMs: Long, val canReply: Boolean)
 
     private fun com.linkdeck.core.network.NotifPush.toLite() =
-        NotifPushLite(key, packageName, title, text, whenMs, canReply)
+        NotifLite(key, packageName, title, text, whenMs, canReply)
 
     private fun arg(args: String, key: String): String = runCatching {
-        json.parseToJsonElement(args).let {
-            if (it is kotlinx.serialization.json.JsonObject) it[key]?.toString()?.trim('"') ?: "" else ""
-        }
+        val el = json.parseToJsonElement(args)
+        if (el is kotlinx.serialization.json.JsonObject) {
+            el[key]?.let { v -> if (v is kotlinx.serialization.json.JsonPrimitive) v.content else "" } ?: ""
+        } else ""
     }.getOrDefault("")
 
     private fun getStatus(context: Context): CmdRes {
         val intent = context.registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val level = intent?.getIntExtra("level", -1) ?: -1
         val status = intent?.getIntExtra("status", -1) ?: -1
-        val storageStat = StatFsCompat.stat(Environment.getDataDirectory())
+        val storage = runCatching {
+            val s = android.os.StatFs(Environment.getDataDirectory().path)
+            s.totalBytes to s.availableBytes
+        }.getOrDefault(0L to 0L)
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val brightness = runCatching {
             Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS)
@@ -123,23 +142,30 @@ object HostCommands {
             val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
             wm.connectionInfo.ssid?.removePrefix("\"")?.removeSuffix("\"")
         }.getOrDefault("")
-        return CmdRes(true, json.encodeToString(StatusInfo.serializer(), StatusInfo(
-            battery = level, charging = status == 2 || status == 5,
-            storageTotal = storageStat.first, storageFree = storageStat.second,
-            wifiSsid = wifi,
-            volume = am.getStreamVolume(AudioManager.STREAM_MUSIC),
-            brightness = brightness,
-        )))
+        return CmdRes(
+            true,
+            json.encodeToString(
+                StatusInfo.serializer(),
+                StatusInfo(
+                    battery = level,
+                    charging = status == 2 || status == 5,
+                    storageTotal = storage.first,
+                    storageFree = storage.second,
+                    wifiSsid = wifi,
+                    volume = am.getStreamVolume(AudioManager.STREAM_MUSIC),
+                    brightness = brightness,
+                ),
+            ),
+        )
     }
 
     private fun smsList(context: Context): CmdRes = runCatching {
         val items = mutableListOf<SimpleItem>()
-        val cursor = context.contentResolver.query(
+        context.contentResolver.query(
             Uri.parse("content://sms/inbox"),
             arrayOf("_id", "address", "body", "date"),
             null, null, "date DESC LIMIT 100",
-        )
-        cursor?.use { c ->
+        )?.use { c ->
             while (c.moveToNext()) {
                 items.add(SimpleItem(c.getString(0) ?: "", c.getString(1) ?: "", c.getString(2) ?: ""))
             }
@@ -159,12 +185,11 @@ object HostCommands {
 
     private fun contactsList(context: Context): CmdRes = runCatching {
         val items = mutableListOf<SimpleItem>()
-        val cursor = context.contentResolver.query(
-            ContactsContractCompat.uri,
-            arrayOf(ContactsContractCompat.id, ContactsContractCompat.name, ContactsContractCompat.phone),
-            null, null, ContactsContractCompat.name + " ASC LIMIT 200",
-        )
-        cursor?.use { c ->
+        context.contentResolver.query(
+            Uri.parse("content://com.android.contacts/contacts"),
+            arrayOf("_id", "display_name", "display_name"),
+            null, null, "display_name ASC LIMIT 200",
+        )?.use { c ->
             while (c.moveToNext()) {
                 items.add(SimpleItem(c.getString(0) ?: "", c.getString(1) ?: "", c.getString(2) ?: ""))
             }
@@ -181,31 +206,33 @@ object HostCommands {
         CmdRes(true, json.encodeToString(ListSerializer(SimpleItem.serializer()), items))
     }.getOrElse { CmdRes(false, error = it.message ?: "apps_failed") }
 
-    private fun launchApp(context: Context, pkg: String): CmdRes = runCatching {
-        val intent = context.packageManager.getLaunchIntentForPackage(pkg) ?: return CmdRes(false, error = "no_launcher")
-        // Android 10+ blocks background activity starts from services: try direct,
-        // and fall back to a heads-up notification the user can tap.
-        try {
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-        } catch (se: SecurityException) {
-            val nm = context.getSystemService(NotificationManager::class.java)
-            val pi = android.app.PendingIntent.getActivity(
-                context, pkg.hashCode(), intent,
-                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
-            )
-            val notif = android.app.Notification.Builder(context, "linkdeck_service")
-                .setSmallIcon(com.linkdeck.app.R.drawable.ic_stat_linkdeck)
-                .setContentTitle(context.getString(com.linkdeck.app.R.string.launch_fallback_title))
-                .setContentText(context.packageManager.getApplicationLabel(
-                    context.packageManager.getApplicationInfo(pkg, 0)).toString())
-                .setContentIntent(pi)
-                .setAutoCancel(true)
-                .build()
-            nm?.notify(pkg.hashCode(), notif)
-        }
-        CmdRes(true)
-    }.getOrElse { CmdRes(false, error = it.message ?: "launch_failed") }
+    private fun launchApp(context: Context, pkg: String): CmdRes {
+        return runCatching {
+            val intent = context.packageManager.getLaunchIntentForPackage(pkg)
+                ?: error("no_launcher")
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            } catch (se: SecurityException) {
+                // Android 10+ background-start restriction: fall back to a heads-up.
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                val pi = android.app.PendingIntent.getActivity(
+                    context, pkg.hashCode(), intent,
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+                )
+                val notif = android.app.Notification.Builder(context, "linkdeck_service")
+                    .setSmallIcon(com.linkdeck.app.R.drawable.ic_stat_linkdeck)
+                    .setContentTitle(context.getString(com.linkdeck.app.R.string.launch_fallback_title))
+                    .setContentText(intent.`package`.let { context.packageManager.getApplicationLabel(
+                        context.packageManager.getApplicationInfo(pkg, 0)).toString() })
+                    .setContentIntent(pi)
+                    .setAutoCancel(true)
+                    .build()
+                nm.notify(pkg.hashCode(), notif)
+            }
+            CmdRes(true)
+        }.getOrElse { CmdRes(false, error = it.message ?: "launch_failed") }
+    }
 
     private fun answerCall(context: Context): CmdRes = runCatching {
         val tm = context.getSystemService(TelecomManager::class.java)
@@ -214,7 +241,6 @@ object HostCommands {
     }.getOrElse { CmdRes(false, error = it.message ?: "answer_failed") }
 
     private fun endCall(context: Context): CmdRes = runCatching {
-        // endCall requires default-dialer or MODIFY_PHONE_STATE on stock Android.
         val tm = context.getSystemService(TelecomManager::class.java)
         tm?.endCall()
         CmdRes(true)
@@ -245,39 +271,23 @@ object HostCommands {
     private fun wake(context: Context): CmdRes = runCatching {
         val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
         if (pm.isInteractive) return CmdRes(true)
-        // wakeUp needs DEVICE_POWER (signature) — fallback: full-screen intent is
-        // handled by the controller shell; here we just report the limitation.
         CmdRes(false, error = "wake_needs_pro_or_proximity")
     }.getOrElse { CmdRes(false, error = it.message ?: "wake_failed") }
 
     private fun lock(context: Context): CmdRes = runCatching {
         val dm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
         if (dm.isAdminActive(android.content.ComponentName(context, DeviceAdminStub::class.java))) {
-            dm.lockNow(); CmdRes(true)
+            dm.lockNow()
+            CmdRes(true)
         } else {
             CmdRes(false, error = "lock_needs_device_admin")
         }
     }.getOrElse { CmdRes(false, error = it.message ?: "lock_failed") }
 
-    private object StatFsCompat {
-        fun stat(dir: java.io.File): Pair<Long, Long> = runCatching {
-            val s = android.os.StatFs(dir.path)
-            s.totalBytes to s.availableBytes
-        }.getOrDefault(0L to 0L)
-    }
-
-    private object ContactsContractCompat {
-        val uri: Uri = Uri.parse("content://com.android.contacts/contacts")
-        const val id = "_id"
-        const val name = "display_name"
-        const val phone = "display_name" // phone requires data-table join; name shown for Phase 3
-    }
-
-    /** Device admin is declared in Phase 5 manifest wiring; see DeviceAdminStub. */
     class DeviceAdminStub : android.app.admin.DeviceAdminReceiver()
 }
 
-/** Holder so the service's clipboard monitor can be reached without Hilt. */
+/** Holder so HostCommands can reach a clipboard monitor without Hilt. */
 object HostClipboardHolder {
     @Volatile private var monitor: HostClipboardMonitor? = null
     fun set(context: Context, text: String) {
