@@ -148,13 +148,15 @@ fun SettingsScreen(onBack: () -> Unit, onOpenGuide: () -> Unit = {}, onOpenCusto
                 )
             }
 
-            SectionTitle(stringResource(R.string.settings_font))
+                        SectionTitle(stringResource(R.string.settings_font))
             AppFont.entries.forEach { f ->
                 SelectRow(
                     label = stringResource(when (f) {
                         AppFont.CAIRO -> R.string.font_cairo
-                        AppFont.TAJAWAL -> R.string.font_tajawal
-                        AppFont.AMIRI -> R.string.font_amiri
+                        AppFont.IBM_PLEX -> R.string.font_ibm
+                        AppFont.MADIKA -> R.string.font_madika
+                        AppFont.BASSEET -> R.string.font_basseet
+                        AppFont.CAMEL -> R.string.font_camel
                         AppFont.SYSTEM -> R.string.font_system
                     }),
                     selected = font == f,
