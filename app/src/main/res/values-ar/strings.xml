@@ -194,4 +194,8 @@
     <string name="pro_failed">يتطلب shell احترافي</string>
     <string name="pro_normal_fallback">استخدم الوضع العادي (MediaProjection + إمكانية الوصول) بدلًا منه</string>
     <string name="launch_fallback_title">اضغط للفتح على الهاتف</string>
+    <string name="font_ibm">IBM بلكس عربي</string>
+    <string name="font_madika">ماديكا</string>
+    <string name="font_basseet">بسيط</string>
+    <string name="font_camel">سنة الجمل</string>
 </resources>
