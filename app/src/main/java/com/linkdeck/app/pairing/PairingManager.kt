@@ -167,7 +167,7 @@ class PairingManager @Inject constructor(
             } finally {
                 client.close()
             }
-        }.mapError()
+        }.getOrElse { Result.failure(PairingException.Detail(describe(it))) }
     }
 
     /** Starts mDNS browsing for previously paired hosts on the LAN. */
@@ -195,11 +195,23 @@ class PairingManager @Inject constructor(
         if (ip != 0) "%d.%d.%d.%d".format(ip and 0xff, ip shr 8 and 0xff, ip shr 16 and 0xff, ip shr 24 and 0xff) else null
     }.getOrNull()
 
-    private fun <T> Result<T>.mapError(): Result<T> = this
+    /** Full error chain: "SSLHandshakeException: ... | CertPathValidatorException: ..." */
+    private fun describe(e: Throwable): String {
+        val sb = StringBuilder()
+        var cur: Throwable? = e
+        var depth = 0
+        while (cur != null && depth < 5) {
+            sb.append(cur.javaClass.simpleName).append(": ").append(cur.message).append("  <<  ")
+            cur = cur.cause
+            depth++
+        }
+        return sb.toString().ifEmpty { "unknown" }
+    }
 
     sealed class PairingException(msg: String) : Exception(msg) {
         data object TokenExpired : PairingException("token expired")
         data object InvalidPayload : PairingException("invalid payload")
+        data class Detail(val full: String) : PairingException(full)
         data class Network(val cause2: Throwable) : PairingException("network: ${cause2.message}")
     }
 }
