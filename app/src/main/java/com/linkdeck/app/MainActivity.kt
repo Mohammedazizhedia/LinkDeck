@@ -5,11 +5,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -62,10 +68,9 @@ class MainActivity : ComponentActivity() {
             val context = LocalContext.current
             val family = loadAppFontFamily(context, font, fontWeight)
 
-            // Recreate the activity when the language override changes so the new
-            // locale is applied through LocaleHelper at attach time.
             val language by vm.language.collectAsState()
             LanguageRestartEffect(language)
+            CrashDialogEffect()
 
             LinkDeckTheme(
                 mode = themeMode,
@@ -82,6 +87,30 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+}
+
+/** Shows the last crash (if any) once, then clears it. */
+@Composable
+private fun CrashDialogEffect() {
+    val context = LocalContext.current
+    var crash by remember { mutableStateOf<String?>(null) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        val log = LinkDeckApp.readCrashLog(context)
+        if (log != null) {
+            crash = log
+            LinkDeckApp.clearCrashLog(context)
+        }
+    }
+    crash?.let { log ->
+        AlertDialog(
+            onDismissRequest = { crash = null },
+            title = { Text("Crash report") },
+            text = { Text(log.take(3000)) },
+            confirmButton = {
+                TextButton(onClick = { crash = null }) { Text("OK") }
+            },
+        )
     }
 }
 
