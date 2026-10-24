@@ -23,11 +23,7 @@ import org.vosk.Recognizer
 import org.vosk.android.RecognitionListener
 import org.vosk.android.SpeechService
 
-/**
- * Offline voice commands (AR/EN) with Vosk — no Google services.
- * The model downloads once into the app's files dir; without it the feature
- * disables itself gracefully.
- */
+/** Offline voice commands (AR/EN) with Vosk — no Google services. */
 @Singleton
 class VoiceCommandManager @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -44,7 +40,7 @@ class VoiceCommandManager @Inject constructor(
     private val _state = MutableStateFlow<VoiceState>(VoiceState.Idle)
     val state: StateFlow<VoiceState> = _state
 
-    private var speechService: SpeechService? = null
+    private var speechService: org.vosk.android.SpeechService? = null
     private var model: Model? = null
 
     companion object {
@@ -125,8 +121,6 @@ class VoiceCommandManager @Inject constructor(
                             override fun onFinalResult(hypothesis: String?) {
                                 hypothesis?.extractText()?.let { mapCommand(it) }?.let(onCommand)
                             }
-                            override fun onBeginningOfSpeech() { _state.value = VoiceState.Listening }
-                            override fun onEndOfSpeech() {}
                         })
                     }
                     _state.value = VoiceState.Ready
