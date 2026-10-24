@@ -14,7 +14,6 @@ import android.hardware.display.VirtualDisplay
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
-import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -29,8 +28,7 @@ import java.io.ByteArrayOutputStream
 /**
  * HOST-side Normal-mode screen capture (fallback for Pro mode):
  * MediaProjection -> JPEG frames over the control channel (~5 fps QVGA).
- * FLAG_SECURE windows render black in the capture — the controller shows the
- * host's explanation message instead of a silent failure.
+ * FLAG_SECURE windows render black — the controller shows the explanation.
  */
 class ScreenCaptureService : Service() {
 
@@ -46,7 +44,9 @@ class ScreenCaptureService : Service() {
         private var instance: ScreenCaptureService? = null
 
         fun stop(context: Context) {
-            instance?.let { context.startService(Intent(context, ScreenCaptureService::class.java).setAction(ACTION_STOP)) }
+            instance?.let {
+                context.startService(Intent(context, ScreenCaptureService::class.java).setAction(ACTION_STOP))
+            }
         }
     }
 
@@ -54,7 +54,7 @@ class ScreenCaptureService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
     private val handler = Handler(Looper.getMainLooper())
-    private var frameJob: java.util.concurrent.ScheduledFuture<*>? = null
+    private var frameJob: java.util.concurrent.ScheduledFuture<*>? null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -69,11 +69,11 @@ class ScreenCaptureService : Service() {
             ACTION_STOP -> { stopCapture(); stopSelf(); return START_NOT_STICKY }
             ACTION_START -> {
                 val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
+                @Suppress("DEPRECATION")
                 val data = intent.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
                 if (resultCode != 0 && data != null) startCapture(resultCode, data)
                 else {
-                    HostBridge.hostServer?.broadcast("mirror_event",
-                        """{"kind":"error","data":"projection_denied"}""")
+                    HostBridge.hostServer?.broadcast("mirror_event", """{"kind":"error","data":"projection_denied"}""")
                     stopSelf()
                 }
             }
@@ -109,9 +109,11 @@ class ScreenCaptureService : Service() {
         val image = reader.acquireLatestImage() ?: return
         try {
             val plane = image.planes[0]
-            val rowPadding = plane.rowPadding - plane.pixelStride * image.width
+            val pixelStride = plane.pixelStride
+            val rowStride = plane.rowStride
+            val rowPadding = rowStride - pixelStride * image.width
             val bmp = Bitmap.createBitmap(
-                image.width + rowPadding / plane.pixelStride, image.height, Bitmap.Config.ARGB_8888,
+                image.width + rowPadding / pixelStride, image.height, Bitmap.Config.ARGB_8888,
             )
             bmp.copyPixelsFromBuffer(plane.buffer)
             val cropped = Bitmap.createBitmap(bmp, 0, 0, image.width, image.height)
@@ -122,7 +124,6 @@ class ScreenCaptureService : Service() {
             val push = FramePush(image.width, image.height, Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP))
             HostBridge.hostServer?.broadcast("frame", ProtoJson.encodeToString(FramePush.serializer(), push))
         } catch (se: SecurityException) {
-            // FLAG_SECURE content: tell the controller instead of failing silently.
             HostBridge.hostServer?.broadcast("mirror_event", """{"kind":"flag_secure"}""")
         } catch (_: Exception) {
         } finally {
@@ -152,7 +153,9 @@ class ScreenCaptureService : Service() {
     private fun createChannel() {
         val nm = getSystemService(NotificationManager::class.java)
         if (nm?.getNotificationChannel(CHANNEL_ID) == null) {
-            nm?.createNotificationChannel(NotificationChannel(CHANNEL_ID, getString(R.string.mirror_channel), NotificationManager.IMPORTANCE_LOW))
+            nm?.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, getString(R.string.mirror_channel), NotificationManager.IMPORTANCE_LOW)
+            )
         }
     }
 
