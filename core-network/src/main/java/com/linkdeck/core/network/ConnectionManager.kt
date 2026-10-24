@@ -3,7 +3,6 @@ package com.linkdeck.core.network
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.websocket.*
-import io.ktor.http.*
 import io.ktor.websocket.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -29,9 +28,9 @@ sealed interface ConnectionState {
 }
 
 /**
- * CONTROLLER-side connection manager: pinned-TLS WebSocket with automatic
- * reconnect (exponential backoff), heartbeat, incoming-event SharedFlow,
- * and id-routed request/response for files and host commands.
+ * CONTROLLER-side connection manager: pinned-TLS WebSocket (wss://) with
+ * automatic reconnect, heartbeat, incoming-event SharedFlow, and id-routed
+ * request/response for files and host commands.
  */
 class ConnectionManager(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
@@ -126,7 +125,7 @@ class ConnectionManager(
             }
         }
         try {
-            client.webSocket(method = HttpMethod.Get, host = device.ip, port = device.port, path = "/ws") {
+            client.webSocket(urlString = "wss://${device.ip}:${device.port}/ws") {
                 session = this
                 send(Frame.Text(ProtoJson.encodeToString(AuthMessage.serializer(), AuthMessage(token = device.token))))
                 val reply = incoming.tryReceive().getOrNull() as? Frame.Text
