@@ -1,6 +1,5 @@
 package com.linkdeck.app.ui.home
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,7 +32,7 @@ import androidx.lifecycle.ViewModel
 import com.linkdeck.app.R
 import com.linkdeck.app.devices.TrustedDeviceStore
 import com.linkdeck.app.pairing.PairingManager
-import com.linkdeck.app.settings.FeatureCatalog
+import com.linkdeck.app.ui.settings.FeatureCatalog
 import com.linkdeck.app.voice.VoiceCommandManager
 import com.linkdeck.core.design.LineIcon
 import com.linkdeck.core.design.LineIconView
