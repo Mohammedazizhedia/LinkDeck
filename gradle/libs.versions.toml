@@ -28,6 +28,7 @@ hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hilt"
 hilt-compiler = { module = "com.google.dagger:hilt-android-compiler", version.ref = "hilt" }
 hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "hilt-navigation" }
 ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
 ktor-client-websockets = { module = "io.ktor:ktor-client-websockets", version.ref = "ktor" }
 ktor-server-cio = { module = "io.ktor:ktor-server-cio", version.ref = "ktor" }
 ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }
@@ -55,7 +56,7 @@ compose = [
     "lifecycle-viewmodel-compose",
     "compose-material3-windowsize",
 ]
-ktor-client = ["ktor-client-cio", "ktor-client-websockets"]
+ktor-client = ["ktor-client-cio", "ktor-client-okhttp", "ktor-client-websockets"]
 ktor-server = ["ktor-server-cio", "ktor-server-netty", "ktor-server-websockets", "ktor-server-content-negotiation", "ktor-serialization-kotlinx-json"]
 
 camerax = ["camerax-core", "camerax-camera2", "camerax-lifecycle", "camerax-view"]
