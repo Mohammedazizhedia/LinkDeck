@@ -24,14 +24,11 @@ import com.linkdeck.core.network.FramePush
 import com.linkdeck.core.network.HostBridge
 import com.linkdeck.core.network.ProtoJson
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
-/**
- * HOST-side Normal-mode screen capture (fallback for Pro mode):
- * MediaProjection -> JPEG frames over the control channel (~5 fps QVGA).
- * FLAG_SECURE windows render black — the controller shows the explanation.
- */
 class ScreenCaptureService : Service() {
-
     companion object {
         const val CHANNEL_ID = "linkdeck_mirror"
         const val NOTIFICATION_ID = 77
@@ -39,7 +36,6 @@ class ScreenCaptureService : Service() {
         const val ACTION_STOP = "com.linkdeck.app.mirror.STOP"
         const val EXTRA_RESULT_CODE = "resultCode"
         const val EXTRA_RESULT_DATA = "resultData"
-
         @Volatile var running = false
         private var instance: ScreenCaptureService? = null
 
@@ -54,24 +50,40 @@ class ScreenCaptureService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
     private val handler = Handler(Looper.getMainLooper())
-    private var frameJob: java.util.concurrent.ScheduledFuture<*>? null
+    private var frameJob: ScheduledFuture<*>? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        createChannel()
-        startForeground(NOTIFICATION_ID, notification(getString(R.string.mirror_running)))
+        val nm = getSystemService(NotificationManager::class.java)
+        if (nm?.getNotificationChannel(CHANNEL_ID) == null) {
+            nm?.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, getString(R.string.mirror_channel), NotificationManager.IMPORTANCE_LOW)
+            )
+        }
+        val stopPi = PendingIntent.getService(
+            this, 1, Intent(this, ScreenCaptureService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notif = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_linkdeck)
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(getString(R.string.mirror_running))
+            .addAction(0, getString(R.string.mirror_stop), stopPi)
+            .setOngoing(true)
+            .build()
+        startForeground(NOTIFICATION_ID, notif)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> { stopCapture(); stopSelf(); return START_NOT_STICKY }
             ACTION_START -> {
-                val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
+                val rc = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
                 @Suppress("DEPRECATION")
                 val data = intent.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
-                if (resultCode != 0 && data != null) startCapture(resultCode, data)
+                if (rc != 0 && data != null) startCapture(rc, data)
                 else {
                     HostBridge.hostServer?.broadcast("mirror_event", """{"kind":"error","data":"projection_denied"}""")
                     stopSelf()
@@ -97,8 +109,8 @@ class ScreenCaptureService : Service() {
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
             imageReader?.surface, null, handler,
         )
-        val scheduler = java.util.concurrent.Executors.newSingleThreadScheduledExecutor()
-        frameJob = scheduler.scheduleWithFixedDelay(::grabFrame, 0, 200, java.util.concurrent.TimeUnit.MILLISECONDS)
+        val scheduler = Executors.newSingleThreadScheduledExecutor()
+        frameJob = scheduler.scheduleWithFixedDelay(::grabFrame, 0, 200, TimeUnit.MILLISECONDS)
         running = true
         instance = this
         HostBridge.hostServer?.broadcast("mirror_event", """{"kind":"started"}""")
@@ -148,28 +160,5 @@ class ScreenCaptureService : Service() {
     override fun onDestroy() {
         stopCapture()
         super.onDestroy()
-    }
-
-    private fun createChannel() {
-        val nm = getSystemService(NotificationManager::class.java)
-        if (nm?.getNotificationChannel(CHANNEL_ID) == null) {
-            nm?.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, getString(R.string.mirror_channel), NotificationManager.IMPORTANCE_LOW)
-            )
-        }
-    }
-
-    private fun notification(text: String): Notification {
-        val stopPi = PendingIntent.getService(
-            this, 1, Intent(this, ScreenCaptureService::class.java).setAction(ACTION_STOP),
-            PendingIntent.FLAG_IMMUTABLE,
-        )
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_linkdeck)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText(text)
-            .addAction(0, getString(R.string.mirror_stop), stopPi)
-            .setOngoing(true)
-            .build()
     }
 }
