@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.wifi.WifiManager
 import com.linkdeck.app.devices.TrustedDeviceStore
-import io.ktor.websocket.readText
 import com.linkdeck.core.network.AuthMessage
 import com.linkdeck.core.network.AuthOk
 import com.linkdeck.core.network.ConnectionManager
@@ -21,8 +20,8 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
-import io.ktor.http.HttpMethod
 import io.ktor.websocket.Frame
+import io.ktor.websocket.readText
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import javax.inject.Inject
@@ -140,7 +139,7 @@ class PairingManager @Inject constructor(
             }
             try {
                 var trusted: TrustedDevice? = null
-                client.webSocket(method = HttpMethod.Get, host = payload.ip, port = payload.port, path = "/ws") {
+                client.webSocket(urlString = "wss://${payload.ip}:${payload.port}/ws") {
                     send(Frame.Text(Json.encodeToString(AuthMessage.serializer(), AuthMessage(token = payload.token))))
                     val reply = incoming.tryReceive().getOrNull() as? Frame.Text
                         ?: throw SecurityException("Host did not reply")
@@ -192,7 +191,7 @@ class PairingManager @Inject constructor(
         if (ip != 0) "%d.%d.%d.%d".format(ip and 0xff, ip shr 8 and 0xff, ip shr 16 and 0xff, ip shr 24 and 0xff) else null
     }.getOrNull()
 
-    private fun <T> Result<T>.mapError(): Result<T> = this // placeholder for fine-grained error mapping
+    private fun <T> Result<T>.mapError(): Result<T> = this
 
     sealed class PairingException(msg: String) : Exception(msg) {
         data object TokenExpired : PairingException("token expired")
