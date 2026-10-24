@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.wifi.WifiManager
 import com.linkdeck.app.devices.TrustedDeviceStore
+import io.ktor.websocket.readText
 import com.linkdeck.core.network.AuthMessage
 import com.linkdeck.core.network.AuthOk
 import com.linkdeck.core.network.ConnectionManager
