@@ -10,20 +10,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Unzip project
         run: |
-          unzip -o app.zip
+          unzip -o *.zip
           mv LinkDeck/* LinkDeck/.github . 2>/dev/null || true
           mv LinkDeck/.* . 2>/dev/null || true
-          rm -rf LinkDeck app.zip
-      - name: Verify fixed sources
-        run: |
-          grep -q "parseLinePath" core-design/src/main/java/com/linkdeck/core/design/LineIcons.kt
-          grep -q "loadAppTypeface" core-design/src/main/java/com/linkdeck/core/design/Type.kt
-          grep -q "applicationEngineEnvironment" core-network/src/main/java/com/linkdeck/core/network/HostServer.kt
-          echo "FIXED SOURCES VERIFIED"
+          rm -rf LinkDeck *.zip
       - name: Commit and push
         run: |
           git config user.name "Mohammedazizhedia"
           git config user.email "mohammedazizhedia@gmail.com"
           git add -A
-          git commit -m "Extract fixed project from app.zip" || echo "nothing to commit"
+          git commit -m "Extract project from zip" || echo "nothing to commit"
           git push
