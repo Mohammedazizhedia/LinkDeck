@@ -1,7 +1,6 @@
 package com.linkdeck.app.service
 
 import android.app.Notification
-import android.app.PendingIntent
 import android.app.RemoteInput
 import android.os.Bundle
 import android.service.notification.NotificationListenerService
@@ -14,7 +13,6 @@ import com.linkdeck.core.network.ProtoJson
 /**
  * HOST side: mirrors posted notifications to connected controllers, keeps the
  * latest snapshot for the tablet list, and executes dismiss/reply commands.
- * Enabled explicitly by the user from Settings → Accessibility-style screens.
  */
 class LinkDeckNotificationListener : NotificationListenerService() {
 
@@ -35,7 +33,7 @@ class LinkDeckNotificationListener : NotificationListenerService() {
             val t = sbn.notification.extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
             val m = Regex("\\b(\\d{6})\\b").find(t)
             if (m != null && t.contains("pair", ignoreCase = true)) {
-                (com.linkdeck.core.network.HostBridge.proManager as? com.linkdeck.app.pro.ProModeManager)
+                (HostBridge.proManager as? com.linkdeck.app.pro.ProModeManager)
                     ?.onPairingCodeCaptured(m.groupValues[1])
             }
         }
@@ -60,9 +58,9 @@ class LinkDeckNotificationListener : NotificationListenerService() {
         val act = sbn.notification.actions?.firstOrNull { it.remoteInputs != null } ?: return false
         return runCatching {
             val fillIn = android.content.Intent()
-            val results = Bundle().apply { putCharSequence(act.remoteInputs!![0].resultKey, text) }
+            val results = Bundle()
+            act.remoteInputs!!.forEach { results.putCharSequence(it.resultKey, text) }
             RemoteInput.addResultsToBundle(act.remoteInputs!!, fillIn, results)
-            // PendingIntent mutability: addResultsToBundle requires a mutable target.
             act.actionIntent.send(this, 0, fillIn)
             true
         }.getOrDefault(false)
