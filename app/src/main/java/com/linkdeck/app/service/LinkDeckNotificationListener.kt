@@ -1,7 +1,6 @@
 package com.linkdeck.app.service
 
 import android.app.Notification
-import android.app.RemoteInput
 import android.os.Bundle
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -60,7 +59,7 @@ class LinkDeckNotificationListener : NotificationListenerService() {
             val fillIn = android.content.Intent()
             val results = Bundle()
             act.remoteInputs!!.forEach { results.putCharSequence(it.resultKey, text) }
-            RemoteInput.addResultsToBundle(act.remoteInputs!!, fillIn, results)
+            fillIn.putExtra("android.remoteinput.results", results)
             act.actionIntent.send(this, 0, fillIn)
             true
         }.getOrDefault(false)
