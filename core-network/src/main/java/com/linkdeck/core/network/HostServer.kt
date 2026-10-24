@@ -2,8 +2,8 @@ package com.linkdeck.core.network
 
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
-import io.ktor.server.netty.* 
 import io.ktor.server.engine.*
+import io.ktor.server.netty.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -25,7 +25,7 @@ sealed interface HostEvent {
     data class ControllerDisconnected(val deviceId: String) : HostEvent
 }
 
-/** TLS WebSocket server on the HOST; ktor 2.3 environment-based connector DSL. */
+/** TLS WebSocket server on the HOST (Netty engine — CIO does not support HTTPS). */
 class HostServer(
     private val identity: TlsIdentity,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
@@ -87,7 +87,7 @@ class HostServer(
             module { appModule() }
         }
 
-        val engine = embeddedServer(CIO, environment)
+        val engine = embeddedServer(Netty, environment)
         server = engine
         engine.start(wait = false)
         boundPort = port
