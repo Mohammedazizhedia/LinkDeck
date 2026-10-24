@@ -194,4 +194,8 @@
     <string name="pro_failed">NEEDS PRO SHELL</string>
     <string name="pro_normal_fallback">Use Normal mode (MediaProjection + Accessibility) instead</string>
     <string name="launch_fallback_title">Tap to open on phone</string>
+    <string name="font_ibm">IBM Plex Arabic</string>
+    <string name="font_madika">Madika Arabic</string>
+    <string name="font_basseet">Basseet</string>
+    <string name="font_camel">The Year of the Camel</string>
 </resources>
