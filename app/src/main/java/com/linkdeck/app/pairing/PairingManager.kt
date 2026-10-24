@@ -17,7 +17,7 @@ import com.linkdeck.core.network.TlsIdentity
 import com.linkdeck.core.network.TrustedDevice
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
+import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.websocket.Frame
@@ -26,6 +26,7 @@ import java.net.Inet4Address
 import java.net.NetworkInterface
 import javax.inject.Inject
 import javax.inject.Singleton
+import javax.net.ssl.SSLContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -128,12 +129,15 @@ class PairingManager @Inject constructor(
 
         runCatching {
             val trustManager = PinnedTrustManager(setOf(payload.fp))
-            val client = HttpClient(CIO) {
+            val sslContext = SSLContext.getInstance("TLS").apply {
+                init(null, arrayOf(trustManager), null)
+            }
+            val client = HttpClient(OkHttp) {
                 install(WebSockets)
                 engine {
-                    https {
-                        this.trustManager = trustManager
-                        serverName = "linkdeck"
+                    config {
+                        sslSocketFactory(sslContext.socketFactory, trustManager)
+                        hostnameVerifier { _, _ -> true }
                     }
                 }
             }
