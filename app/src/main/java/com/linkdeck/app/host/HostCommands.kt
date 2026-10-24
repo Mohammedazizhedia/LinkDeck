@@ -43,74 +43,85 @@ object HostCommands {
 
     private fun res(r: CmdRes) = json.encodeToString(CmdRes.serializer(), r)
 
-    private fun runCmd(context: Context, cmd: String, args: String): CmdRes = when (cmd) {
-        "get_status" -> getStatus(context)
-        "set_clipboard" -> {
-            HostClipboardHolder.set(context, arg(args, "text"))
-            CmdRes(true)
-        }
-        "sms_list" -> smsList(context)
-        "sms_send" -> smsSend(context, arg(args, "to"), arg(args, "body"))
-        "contacts_list" -> contactsList(context)
-        "apps_list" -> appsList(context)
-        "launch_app" -> launchApp(context, arg(args, "package"))
-        "dial" -> {
-            runCatching {
-                context.startActivity(
-                    Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + arg(args, "number")))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
+    private fun runCmd(context: Context, cmd: String, args: String): CmdRes {
+        return when (cmd) {
+            "get_status" -> getStatus(context)
+            "set_clipboard" -> {
+                HostClipboardHolder.set(context, arg(args, "text"))
+                CmdRes(true)
             }
-            CmdRes(true)
-        }
-        "answer_call" -> answerCall(context)
-        "end_call" -> endCall(context)
-        "notif_dismiss" -> {
-            (HostBridge.notificationListener as? LinkDeckNotificationListener)?.dismiss(arg(args, "key"))
-            CmdRes(true)
-        }
-        "notif_reply" -> {
-            val ok = (HostBridge.notificationListener as? LinkDeckNotificationListener)
-                ?.reply(arg(args, "key"), arg(args, "text")) == true
-            CmdRes(ok, error = if (ok) "" else "reply_unavailable")
-        }
-        "notif_snapshot" -> {
-            val items = (HostBridge.notificationListener as? LinkDeckNotificationListener)?.snapshot().orEmpty()
-            CmdRes(true, json.encodeToString(ListSerializer(NotifLite.serializer()), items.map { it.toLite() }))
-        }
-        "set_volume" -> {
-            val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val level = arg(args, "level").toIntOrNull() ?: return CmdRes(false, error = "bad_args")
-            am.setStreamVolume(
-                AudioManager.STREAM_MUSIC,
-                level.coerceIn(0, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)),
-                0,
+            "sms_list" -> smsList(context)
+            "sms_send" -> smsSend(context, arg(args, "to"), arg(args, "body"))
+            "contacts_list" -> contactsList(context)
+            "apps_list" -> appsList(context)
+            "launch_app" -> launchApp(context, arg(args, "package"))
+            "dial" -> {
+                runCatching {
+                    context.startActivity(
+                        Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + arg(args, "number")))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+                CmdRes(true)
+            }
+            "answer_call" -> answerCall(context)
+            "end_call" -> endCall(context)
+            "notif_dismiss" -> {
+                (HostBridge.notificationListener as? LinkDeckNotificationListener)?.dismiss(arg(args, "key"))
+                CmdRes(true)
+            }
+            "notif_reply" -> {
+                val ok = (HostBridge.notificationListener as? LinkDeckNotificationListener)
+                    ?.reply(arg(args, "key"), arg(args, "text")) == true
+                CmdRes(ok, error = if (ok) "" else "reply_unavailable")
+            }
+            "notif_snapshot" -> {
+                val items = (HostBridge.notificationListener as? LinkDeckNotificationListener)?.snapshot().orEmpty()
+                CmdRes(true, json.encodeToString(ListSerializer(NotifLite.serializer()), items.map { it.toLite() }))
+            }
+            "set_volume" -> {
+                val level = arg(args, "level").toIntOrNull()
+                if (level == null) {
+                    CmdRes(false, error = "bad_args")
+                } else {
+                    val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                    am.setStreamVolume(
+                        AudioManager.STREAM_MUSIC,
+                        level.coerceIn(0, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)),
+                        0,
+                    )
+                    CmdRes(true)
+                }
+            }
+            "set_brightness" -> {
+                val v = arg(args, "level").toIntOrNull()
+                if (v == null) {
+                    CmdRes(false, error = "bad_args")
+                } else if (!Settings.System.canWrite(context)) {
+                    CmdRes(false, error = "need_write_settings")
+                } else {
+                    Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, v.coerceIn(0, 255))
+                    CmdRes(true)
+                }
+            }
+            "wake" -> wake(context)
+            "lock" -> lock(context)
+            "inject_key" -> injectKey(context, arg(args, "key"))
+            "inject_tap" -> injectTap(
+                context,
+                arg(args, "x").toFloatOrNull() ?: 0f,
+                arg(args, "y").toFloatOrNull() ?: 0f,
             )
-            CmdRes(true)
+            "mirror_request" -> {
+                com.linkdeck.app.mirror.MirrorConsentActivity.request(context)
+                CmdRes(true)
+            }
+            "mirror_stop" -> {
+                com.linkdeck.app.mirror.ScreenCaptureService.stop(context)
+                CmdRes(true)
+            }
+            else -> CmdRes(false, error = "unknown_cmd")
         }
-        "set_brightness" -> {
-            val v = arg(args, "level").toIntOrNull() ?: return CmdRes(false, error = "bad_args")
-            if (!Settings.System.canWrite(context)) return CmdRes(false, error = "need_write_settings")
-            Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, v.coerceIn(0, 255))
-            CmdRes(true)
-        }
-        "wake" -> wake(context)
-        "lock" -> lock(context)
-        "inject_key" -> injectKey(context, arg(args, "key"))
-        "inject_tap" -> injectTap(
-            context,
-            arg(args, "x").toFloatOrNull() ?: 0f,
-            arg(args, "y").toFloatOrNull() ?: 0f,
-        )
-        "mirror_request" -> {
-            com.linkdeck.app.mirror.MirrorConsentActivity.request(context)
-            CmdRes(true)
-        }
-        "mirror_stop" -> {
-            com.linkdeck.app.mirror.ScreenCaptureService.stop(context)
-            CmdRes(true)
-        }
-        else -> CmdRes(false, error = "unknown_cmd")
     }
 
     @Serializable
@@ -214,17 +225,18 @@ object HostCommands {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(intent)
             } catch (se: SecurityException) {
-                // Android 10+ background-start restriction: fall back to a heads-up.
                 val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
                 val pi = android.app.PendingIntent.getActivity(
                     context, pkg.hashCode(), intent,
                     android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
                 )
+                val label = context.packageManager.getApplicationLabel(
+                    context.packageManager.getApplicationInfo(pkg, 0)
+                ).toString()
                 val notif = android.app.Notification.Builder(context, "linkdeck_service")
                     .setSmallIcon(com.linkdeck.app.R.drawable.ic_stat_linkdeck)
                     .setContentTitle(context.getString(com.linkdeck.app.R.string.launch_fallback_title))
-                    .setContentText(intent.`package`.let { context.packageManager.getApplicationLabel(
-                        context.packageManager.getApplicationInfo(pkg, 0)).toString() })
+                    .setContentText(label)
                     .setContentIntent(pi)
                     .setAutoCancel(true)
                     .build()
