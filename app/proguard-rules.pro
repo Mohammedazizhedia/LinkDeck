@@ -28,3 +28,8 @@
 -dontwarn org.vosk.**
 -dontwarn com.sun.jna.**
 -dontwarn edu.cmu.sphinx.**
+-keep class io.netty.** { *; }
+-keep class org.jboss.** { *; }
+-dontwarn io.netty.**
+-dontwarn org.jboss.**
+-keepattributes Signature
