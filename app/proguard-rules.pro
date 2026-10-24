@@ -33,3 +33,7 @@
 -dontwarn io.netty.**
 -dontwarn org.jboss.**
 -keepattributes Signature
+
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-keep class okhttp3.** { *; }
