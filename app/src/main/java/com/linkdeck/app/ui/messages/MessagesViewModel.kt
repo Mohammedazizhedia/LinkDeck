@@ -65,7 +65,8 @@ class MessagesViewModel @Inject constructor(
     fun send(to: String, body: String) {
         _sending.value = true
         viewModelScope.launch {
-            val args = """{"to":${ProtoJson.encodeToString(kotlinx.serialization.builtins.serializer<String>(), to)},"body":${ProtoJson.encodeToString(kotlinx.serialization.builtins.serializer<String>(), body)}}"""
+            val str = kotlinx.serialization.serializer<String>()
+            val args = """{"to":${ProtoJson.encodeToString(str, to)},"body":${ProtoJson.encodeToString(str, body)}}"""
             connectionManager.request("cmd", ProtoJson.encodeToString(CmdReq.serializer(), CmdReq("sms_send", args)))
                 .onSuccess { refresh() }
                 .onFailure { _error.value = it.message }
