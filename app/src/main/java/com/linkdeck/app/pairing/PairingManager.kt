@@ -167,7 +167,10 @@ class PairingManager @Inject constructor(
             } finally {
                 client.close()
             }
-        }.getOrElse { Result.failure(PairingException.Detail(describe(it))) }
+        }.fold(
+            onSuccess = { Result.success(it) },
+            onFailure = { Result.failure(PairingException.Detail(describe(it))) },
+        )
     }
 
     /** Starts mDNS browsing for previously paired hosts on the LAN. */
@@ -195,7 +198,7 @@ class PairingManager @Inject constructor(
         if (ip != 0) "%d.%d.%d.%d".format(ip and 0xff, ip shr 8 and 0xff, ip shr 16 and 0xff, ip shr 24 and 0xff) else null
     }.getOrNull()
 
-    /** Full error chain: "SSLHandshakeException: ... | CertPathValidatorException: ..." */
+    /** Full error chain: "SSLHandshakeException: ...  <<  CertPathValidatorException: ..." */
     private fun describe(e: Throwable): String {
         val sb = StringBuilder()
         var cur: Throwable? = e
