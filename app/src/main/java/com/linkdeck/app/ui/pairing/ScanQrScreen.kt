@@ -8,6 +8,7 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -35,7 +36,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -71,9 +71,11 @@ class ScanQrViewModel @Inject constructor(val pairingManager: PairingManager) : 
 
     fun onScanned(content: String) {
         if (_state.value != ScanUiState.Scanning) return
+        // Silently ignore anything that is not a LinkDeck payload — keep scanning.
+        if (!content.contains("\"token\"")) return
         val payload = PairingPayload.fromQrContent(content)
         if (payload == null) {
-            _state.value = ScanUiState.Error("unrecognized_qr")
+            _state.value = ScanUiState.Error("scanned: ${content.take(120)}")
             return
         }
         if (payload.isExpired()) {
@@ -129,7 +131,7 @@ fun ScanQrScreen(onBack: () -> Unit) {
                     Column(
                         Modifier.fillMaxSize().padding(Spacing.xxl),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+                        verticalArrangement = Arrangement.Center,
                     ) {
                         Text(stringResource(R.string.perm_camera_why), style = MaterialTheme.typography.bodyMedium)
                         Spacer(Modifier.height(Spacing.xl))
@@ -199,7 +201,7 @@ private fun CameraQrView(onCode: (String) -> Unit, modifier: Modifier = Modifier
     val executor = remember { ContextCompat.getMainExecutor(context) }
     var bound by remember { mutableStateOf(false) }
 
-    AndroidView(
+    androidx.compose.ui.viewinterop.AndroidView(
         factory = { ctx ->
             PreviewView(ctx).apply {
                 scaleType = PreviewView.ScaleType.FILL_CENTER
