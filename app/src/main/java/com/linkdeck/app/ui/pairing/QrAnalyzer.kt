@@ -1,4 +1,4 @@
-package com.linkdeck.app.pairing
+package com.linkdeck.app.ui.pairing
 
 import androidx.annotation.OptIn
 import androidx.camera.core.ExperimentalGetImage
@@ -36,10 +36,8 @@ class QrAnalyzer(private val onCode: (String) -> Unit) : ImageAnalysis.Analyzer 
             val source = PlanarYUVLuminanceSource(
                 data, width, height, 0, 0, width, height, false,
             )
-            val result = reader.decodeWithState(
-                BinaryBitmap(HybridBinarizer(source)),
-                mapOf(DecodeHintType.TRY_HARDER to true),
-            )
+            reader.setHints(mapOf(DecodeHintType.TRY_HARDER to true))
+            val result = reader.decodeWithState(BinaryBitmap(HybridBinarizer(source)))
             onCode(result.text)
         } catch (_: NotFoundException) {
             // Not a QR frame — keep scanning.
