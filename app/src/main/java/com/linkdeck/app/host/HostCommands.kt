@@ -151,7 +151,7 @@ object HostCommands {
         }.getOrDefault(-1)
         val wifi = runCatching {
             val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
-            wm.connectionInfo.ssid?.removePrefix("\"")?.removeSuffix("\"")
+            wm.connectionInfo.ssid?.removePrefix("\"")?.removeSuffix("\"") ?: ""
         }.getOrDefault("")
         return CmdRes(
             true,
