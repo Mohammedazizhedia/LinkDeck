@@ -2,6 +2,7 @@ package com.linkdeck.app.ui.notifications
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.linkdeck.core.network.CmdReq
 import com.linkdeck.core.network.ConnectionManager
 import com.linkdeck.core.network.Envelope
 import com.linkdeck.core.network.NotifDismissPush
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.builtins.ListSerializer
 
 /** Controller-side mirror: live list of host notifications with reply/dismiss. */
 @HiltViewModel
@@ -28,15 +30,12 @@ class NotificationsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            // Snapshot of what is already on the host.
-            connectionManager.request("cmd", ProtoJson.encodeToString(
-                com.linkdeck.core.network.CmdReq.serializer(),
-                com.linkdeck.core.network.CmdReq("notif_snapshot"),
-            )).onSuccess { json ->
+            connectionManager.request(
+                "cmd",
+                ProtoJson.encodeToString(CmdReq.serializer(), CmdReq("notif_snapshot")),
+            ).onSuccess { json ->
                 runCatching {
-                    val arr = ProtoJson.decodeFromString(
-                        kotlinx.serialization.builtins.ListSerializer(NotifPush.serializer()), json)
-                    _items.value = arr.reversed()
+                    _items.value = ProtoJson.decodeFromString(ListSerializer(NotifPush.serializer()), json).reversed()
                 }
             }
             connectionManager.events.collect { raw ->
@@ -59,23 +58,31 @@ class NotificationsViewModel @Inject constructor(
     }
 
     fun dismiss(key: String) = viewModelScope.launch {
-        connectionManager.send("cmd", ProtoJson.encodeToString(
-            com.linkdeck.core.network.CmdReq.serializer(),
-            com.linkdeck.core.network.CmdReq("notif_dismiss", """{"key":"$key"}"""),
-        ))
+        connectionManager.send(
+            "cmd",
+            ProtoJson.encodeToString(CmdReq.serializer(), CmdReq("notif_dismiss", """{"key":"$key"}""")),
+        )
     }
 
     fun reply(key: String, text: String) = viewModelScope.launch {
-        connectionManager.send("cmd", ProtoJson.encodeToString(
-            com.linkdeck.core.network.CmdReq.serializer(),
-            com.linkdeck.core.network.CmdReq("notif_reply", """{"key":"$key","text":${ProtoJson.encodeToString(kotlinx.serialization.builtins.serializer<String>(), text)}}"""),
-        ))
+        val str = kotlinx.serialization.serializer<String>()
+        connectionManager.send(
+            "cmd",
+            ProtoJson.encodeToString(
+                CmdReq.serializer(),
+                CmdReq("notif_reply", """{"key":"$key","text":${ProtoJson.encodeToString(str, text)}}"""),
+            ),
+        )
     }
 
     fun sendClipboardToHost(text: String) = viewModelScope.launch {
-        connectionManager.send("cmd", ProtoJson.encodeToString(
-            com.linkdeck.core.network.CmdReq.serializer(),
-            com.linkdeck.core.network.CmdReq("set_clipboard", """{"text":${ProtoJson.encodeToString(kotlinx.serialization.builtins.serializer<String>(), text)}}"""),
-        ))
+        val str = kotlinx.serialization.serializer<String>()
+        connectionManager.send(
+            "cmd",
+            ProtoJson.encodeToString(
+                CmdReq.serializer(),
+                CmdReq("set_clipboard", """{"text":${ProtoJson.encodeToString(str, text)}}"""),
+            ),
+        )
     }
 }
