@@ -119,7 +119,7 @@ class HostServer(
                 } catch (t: Throwable) {
                     DebugLog.log("Host", "ws error: ${t.javaClass.simpleName}: ${t.message}")
                     runCatching {
-                        send(Frame.Text("{\\"type\\":\\"auth_error\\",\\"reason\\":\\"server:" + t.javaClass.simpleName + ":" + (t.message ?: "").take(120) + "\\"}"))
+                        send(Frame.Text("{\"type\":\"auth_error\",\"reason\":\"server:" + t.javaClass.simpleName + ":" + (t.message ?: "").take(120) + "\"}"))
                     }
                     runCatching { close() }
                 }
@@ -160,7 +160,7 @@ class HostServer(
     }
 
     private fun handleText(deviceId: String, text: String) {
-        if (text.contains("\\"ping\\"")) {
+        if (text.contains("\"ping\"")) {
             scope.launch { runCatching { sessions[deviceId]?.send(Frame.Text(text)) } }
             return
         }

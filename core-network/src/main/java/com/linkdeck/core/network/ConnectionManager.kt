@@ -136,7 +136,7 @@ class ConnectionManager(
                 val reply = incoming.receive() as? Frame.Text
                     ?: throw SecurityException("No auth reply")
                 val text = reply.readText()
-                if (!text.contains("\\"auth_ok\\"")) {
+                if (!text.contains("\"auth_ok\"")) {
                     DebugLog.log("Conn", "auth rejected: " + text.take(120))
                     throw SecurityException("Auth rejected by host")
                 }
