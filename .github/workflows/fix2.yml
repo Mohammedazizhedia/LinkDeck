@@ -1,0 +1,22 @@
+name: Fix Escapes
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repair string escapes
+        run: |
+          sed -i 's/\\\\"/\\"/g' core-network/src/main/java/com/linkdeck/core/network/HostServer.kt core-network/src/main/java/com/linkdeck/core/network/ConnectionManager.kt
+      - name: Commit and push
+        run: |
+          git config user.name "Mohammedazizhedia"
+          git config user.email "mohammedazizhedia@gmail.com"
+          git add -A
+          git commit -m "Fix escaped quotes"
+          git push
