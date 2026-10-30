@@ -25,7 +25,7 @@ sealed interface HostEvent {
     data class ControllerDisconnected(val deviceId: String) : HostEvent
 }
 
-/** TLS WebSocket server on the HOST (Netty engine — CIO does not support HTTPS). */
+/** TLS WebSocket server on the HOST (Netty engine). */
 class HostServer(
     private val identity: TlsIdentity,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
@@ -91,6 +91,7 @@ class HostServer(
         server = engine
         engine.start(wait = false)
         boundPort = port
+        DebugLog.log("Host", "server started on port $boundPort")
         return boundPort
     }
 
@@ -100,29 +101,38 @@ class HostServer(
         routing {
             get("/ping") { call.respondText("linkdeck-ok") }
             webSocket("/ws") {
-                val deviceId = authenticate() ?: return@webSocket
-                sessions[deviceId] = this
-                _events.value = HostEvent.ControllerConnected(deviceId)
                 try {
-                    for (frame in incoming) {
-                        when (frame) {
-                            is Frame.Text -> handleText(deviceId, frame.readText())
-                            else -> Unit
+                    val deviceId = authenticate() ?: return@webSocket
+                    sessions[deviceId] = this
+                    _events.value = HostEvent.ControllerConnected(deviceId)
+                    try {
+                        for (frame in incoming) {
+                            when (frame) {
+                                is Frame.Text -> handleText(deviceId, frame.readText())
+                                else -> Unit
+                            }
                         }
+                    } finally {
+                        sessions.remove(deviceId)
+                        _events.value = HostEvent.ControllerDisconnected(deviceId)
                     }
-                } finally {
-                    sessions.remove(deviceId)
-                    _events.value = HostEvent.ControllerDisconnected(deviceId)
+                } catch (t: Throwable) {
+                    DebugLog.log("Host", "ws error: ${t.javaClass.simpleName}: ${t.message}")
+                    runCatching {
+                        send(Frame.Text("{\\"type\\":\\"auth_error\\",\\"reason\\":\\"server:" + t.javaClass.simpleName + ":" + (t.message ?: "").take(120) + "\\"}"))
+                    }
+                    runCatching { close() }
                 }
             }
         }
     }
 
     private suspend fun DefaultWebSocketServerSession.authenticate(): String? {
-        val first = incoming.tryReceive().getOrNull() as? Frame.Text ?: return reject("no auth frame")
+        val first = incoming.receive() as? Frame.Text ?: return reject("no auth frame")
         val auth = runCatching {
             kotlinx.serialization.json.Json.decodeFromString<AuthMessage>(first.readText())
         }.getOrNull() ?: return reject("malformed auth")
+        DebugLog.log("Host", "auth attempt token=${auth.token.take(10)} valid=${isQrTokenValid(auth.token)}")
         val deviceId = UUID.randomUUID().toString().replace("-", "")
 
         return when {
@@ -130,12 +140,13 @@ class HostServer(
                 qrToken = null
                 val deviceToken = UUID.randomUUID().toString().replace("-", "")
                 deviceTokens[deviceId] = deviceToken
-                sendSerialized(AuthOk(deviceId = deviceId, deviceToken = deviceToken))
+                send(Frame.Text(kotlinx.serialization.json.Json.encodeToString(AuthOk.serializer(), AuthOk(deviceId = deviceId, deviceToken = deviceToken))))
+                DebugLog.log("Host", "pairing OK device=$deviceId")
                 deviceId
             }
             deviceTokens.entries.firstOrNull { it.value == auth.token } != null -> {
                 val knownId = deviceTokens.entries.first { it.value == auth.token }.key
-                sendSerialized(AuthOk(deviceId = knownId, deviceToken = auth.token))
+                send(Frame.Text(kotlinx.serialization.json.Json.encodeToString(AuthOk.serializer(), AuthOk(deviceId = knownId, deviceToken = auth.token))))
                 knownId
             }
             else -> reject("invalid or expired token")
@@ -143,13 +154,13 @@ class HostServer(
     }
 
     private suspend fun DefaultWebSocketServerSession.reject(reason: String): String? {
-        sendSerialized(AuthError(reason = reason))
+        send(Frame.Text(kotlinx.serialization.json.Json.encodeToString(AuthError.serializer(), AuthError(reason = reason))))
         close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, reason))
         return null
     }
 
     private fun handleText(deviceId: String, text: String) {
-        if (text.contains("\"ping\"")) {
+        if (text.contains("\\"ping\\"")) {
             scope.launch { runCatching { sessions[deviceId]?.send(Frame.Text(text)) } }
             return
         }

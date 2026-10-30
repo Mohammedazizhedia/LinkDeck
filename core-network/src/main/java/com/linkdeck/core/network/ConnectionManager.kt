@@ -28,18 +28,13 @@ sealed interface ConnectionState {
     data class Error(val message: String) : ConnectionState
 }
 
-/**
- * CONTROLLER-side connection manager: pinned-TLS WebSocket (wss://) with
- * automatic reconnect, heartbeat, incoming-event SharedFlow, and id-routed
- * request/response. OkHttp engine for rock-solid TLS with custom pinning.
- */
+/** CONTROLLER-side connection manager: pinned-TLS WebSocket (wss://). */
 class ConnectionManager(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val state: StateFlow<ConnectionState> = _state
 
-    /** Raw JSON envelopes pushed by the host (notifications, clipboard, frames, events). */
     private val _events = MutableSharedFlow<String>(extraBufferCapacity = 256)
     val events: SharedFlow<String> = _events
 
@@ -79,14 +74,12 @@ class ConnectionManager(
         }
     }
 
-    /** Fire-and-forget JSON message to the host. */
     suspend fun send(type: String, payloadJson: String = "{}"): Boolean {
         val msg = ProtoJson.encodeToString(Envelope.serializer(), Envelope(0, type, payloadJson))
         val s = session ?: return false
         return runCatching { s.send(Frame.Text(msg)); true }.getOrDefault(false)
     }
 
-    /** Request/response: waits for the host's reply with the same envelope id. */
     suspend fun request(type: String, payloadJson: String = "{}"): Result<String> {
         val id = nextId.getAndIncrement()
         val deferred = CompletableDeferred<String>()
@@ -106,6 +99,7 @@ class ConnectionManager(
             if (ok) return
             reconnectAttempts++
             if (reconnectAttempts >= 8) {
+                DebugLog.log("Conn", "gave up connecting to ${device.ip}:${device.port}")
                 _state.value = ConnectionState.Error("unreachable")
                 return
             }
@@ -124,6 +118,9 @@ class ConnectionManager(
                 config {
                     sslSocketFactory(sslContext.socketFactory, trustManager)
                     hostnameVerifier { _, _ -> true }
+                    connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                    readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                    writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                 }
             }
         }
@@ -136,10 +133,14 @@ class ConnectionManager(
             client.webSocket(urlString = "wss://${device.ip}:${device.port}/ws") {
                 session = this
                 send(Frame.Text(ProtoJson.encodeToString(AuthMessage.serializer(), AuthMessage(token = device.token))))
-                val reply = incoming.tryReceive().getOrNull() as? Frame.Text
+                val reply = incoming.receive() as? Frame.Text
                     ?: throw SecurityException("No auth reply")
                 val text = reply.readText()
-                if (!text.contains("\"auth_ok\"")) throw SecurityException("Auth rejected by host")
+                if (!text.contains("\\"auth_ok\\"")) {
+                    DebugLog.log("Conn", "auth rejected: " + text.take(120))
+                    throw SecurityException("Auth rejected by host")
+                }
+                DebugLog.log("Conn", "connected to ${device.ip}:${device.port}")
 
                 _state.value = ConnectionState.Connected(device)
                 reconnectAttempts = 0
