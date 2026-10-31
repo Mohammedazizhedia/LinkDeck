@@ -1,0 +1,119 @@
+name: Fix Build Errors
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write DESIGN.md (if missing)
+        run: |
+          cat > DESIGN.md <<'KOTLIN_EOF'
+          # LinkDeck — DESIGN.md
+
+          ## وضع خدمات جوجل (إلزامي)
+          **A) بدون جوجل (No-GMS)** - التطبيق بدون GMS/Firebase/Nearby (متوافق مع Huawei). الاتصال محلي 100%.
+
+          ## الاتصال
+          QR/TLS pinning - Hotspot - Wi-Fi Direct (P2P) - manual entry - mDNS.
+          KOTLIN_EOF
+      - name: Fix MainActivity imports + copy_error string + HostServer P2P
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib, sys
+
+          def patch(path, old, new, label):
+              p = pathlib.Path(path); t = p.read_text(encoding="utf-8")
+              if new in t: print("skip:", label); return
+              if old not in t: print("ANCHOR MISSING:", label); sys.exit(1)
+              p.write_text(t.replace(old, new, 1), encoding="utf-8"); print("patched:", label)
+
+          # 1) MainActivity missing imports
+          MA = "app/src/main/java/com/linkdeck/app/MainActivity.kt"
+          patch(MA, "import androidx.compose.foundation.layout.fillMaxSize",
+                "import androidx.compose.foundation.layout.Column\nimport androidx.compose.foundation.layout.Row\nimport androidx.compose.foundation.layout.fillMaxSize", "MA imports layout")
+          patch(MA, "import androidx.compose.ui.platform.LocalContext",
+                "import androidx.compose.ui.platform.LocalContext\nimport androidx.compose.ui.res.stringResource", "MA import stringResource")
+
+          # 2) copy_error string
+          for path, txt in [("app/src/main/res/values/strings.xml", '    <string name="copy_error">Copy error</string>\n'),
+                            ("app/src/main/res/values-ar/strings.xml", '    <string name="copy_error">نسخ الخطأ</string>\n')]:
+              p = pathlib.Path(path); t = p.read_text(encoding="utf-8")
+              if 'name="copy_error"' not in t:
+                  p.write_text(t.replace("</resources>", txt + "</resources>"), encoding="utf-8")
+                  print("patched: strings", path)
+
+          # 3) HostServer P2P state
+          HS = "core-network/src/main/java/com/linkdeck/core/network/HostServer.kt"
+          p = pathlib.Path(HS); t = p.read_text(encoding="utf-8")
+          if "p2pCode" not in t:
+              a = '    var commandHandler: ((String) -> String?)? = null'
+              assert a in t, "anchor hs1"
+              t = t.replace(a, a + '''
+
+              @Volatile
+              private var p2pCode: String? = null
+
+              fun newP2pCode(): String {
+                  val code = (100000..999999).random().toString()
+                  p2pCode = code
+                  return code
+              }
+
+              private fun isP2pCodeValid(code: String): Boolean = p2pCode != null && p2pCode == code''', 1)
+          if "p2p_auth_ok" not in t:
+              old = '''        val first = incoming.receive() as? Frame.Text ?: return reject("no auth frame")
+              val auth = runCatching {
+                  kotlinx.serialization.json.Json.decodeFromString<AuthMessage>(first.readText())
+              }.getOrNull() ?: return reject("malformed auth")'''
+              assert old in t, "anchor hs2"
+              new = '''        val first = incoming.receive() as? Frame.Text ?: return reject("no auth frame")
+              val raw = first.readText()
+              val auth = runCatching {
+                  kotlinx.serialization.json.Json.decodeFromString<AuthMessage>(raw)
+              }.getOrNull()
+              if (auth == null) {
+                  val p2p = runCatching {
+                      kotlinx.serialization.json.Json.decodeFromString(P2pPair.serializer(), raw)
+                  }.getOrNull()
+                  if (p2p != null && isP2pCodeValid(p2p.code)) {
+                      p2pCode = null
+                      val deviceId = UUID.randomUUID().toString().replace("-", "")
+                      val deviceToken = UUID.randomUUID().toString().replace("-", "")
+                      deviceTokens[deviceId] = deviceToken
+                      val payload = kotlinx.serialization.json.Json.encodeToString(
+                          P2pAuthOk.serializer(),
+                          P2pAuthOk(deviceId = deviceId, deviceToken = deviceToken, fingerprint = identity.certificateFingerprint),
+                      )
+                      val env = kotlinx.serialization.json.Json.encodeToString(
+                          Envelope.serializer(), Envelope(0, "p2p_auth_ok", payload),
+                      )
+                      send(Frame.Text(env))
+                      DebugLog.log("Host", "p2p pairing OK device=" + deviceId)
+                      return deviceId
+                  }
+                  return reject("malformed auth")
+              }'''
+              t = t.replace(old, new, 1)
+          if "P2P_PORT" not in t:
+              old2 = '''    private fun findFreePort(): Int {
+                  for (attempt in 0 until 20) {'''
+              assert old2 in t, "anchor hs3"
+              t = t.replace(old2, '''    private fun findFreePort(): Int {
+                  runCatching { ServerSocket(P2P_PORT).use { return P2P_PORT } }
+                  for (attempt in 0 until 20) {''', 1)
+          pathlib.Path(HS).write_text(t, encoding="utf-8")
+          print("patched: HostServer P2P")
+          print("ALL OK")
+          PYEOF
+      - name: Commit and push
+        run: |
+          git config user.name "Mohammedazizhedia"
+          git config user.email "mohammedazizhedia@gmail.com"
+          git add -A
+          git commit -m "Fix build: imports, strings, server P2P"
+          git push
