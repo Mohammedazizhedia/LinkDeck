@@ -1,0 +1,441 @@
+name: Final All
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write BFB files
+        run: |
+          mkdir -p .
+          cat > DESIGN.md <<'KOTLIN_EOF'
+          # LinkDeck — DESIGN.md
+
+          ## وضع خدمات جوجل (إلزامي)
+          **A) بدون جوجل (No-GMS)** — مختار: التطبيق يعمل بالكامل بدون GMS/Firebase/Nearby (متوافق مع Huawei EMUI/HarmonyOS). لا توجد مكتبات Google في أي وحدة. المزامنة والاتصال محليان 100%.
+
+          ## المزاج البصري (Moodboard)
+          "هدوء فائق الجودة": Super-Device بدون ضجيج — مساحات بيضاء دافئة، ألوان معتمدة من نظام التصميم، أيقونات خطية مرسومة يدويًا.
+
+          ## Design Tokens (core-design)
+          - السطوح: فاتح #F8F7F3/#FDFDFB — داكن #0F100E/#131412
+          - التمائج الستة: Default/Teal/Indigo/Amber/Rose/Dynamic (Material You) — تباين كل زوج مضمون ≥ 4.5:1
+          - الخطوط المضمنة: Cairo، IBM Plex Arabic، Madika، Basseet، The Year of the Camel + خط النظام
+          - الأيقونات: LineIcon grid 64، stroke قابل للتخصيص (Thin/Regular/Bold)
+
+          ## المنافسون وتحليلهم
+          Super Device (Huawei)، Phone Link (Microsoft)، AirDrop (Apple)، LocalSend، KDE Connect
+          الميزة التوقيعية: وضع Host/Controller في APK واحد + drag-to-connect + ميرايا نافذة عائمة.
+
+          ## بنية الاتصال
+          QR/TLS-pinning (LAN) · Hotspot خاص بالتطبيق · Wi-Fi Direct (P2P) · إدخال يدوي · mDNS اكتشاف تلقائي.
+          KOTLIN_EOF
+          mkdir -p .
+          cat > BFB.txt <<'KOTLIN_EOF'
+          Built For Benefits, by AI — BFB.AI
+          ==================================
+          LinkDeck is Built For Benefits, by AI (BFB.AI).
+          Brand assets: assets/brand/ (SVG x3: light/dark/mono).
+          This file ships inside every release archive.
+          KOTLIN_EOF
+          mkdir -p app/src/main/assets/brand
+          cat > app/src/main/assets/brand/bfb-logo-light.svg <<'KOTLIN_EOF'
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><path d="M24 8 h16 a8 8 0 0 1 0 16 h-16 z M24 24 h20 a8 8 0 0 1 0 16 h-20 z M24 40 h24 a8 8 0 0 1 0 16 h-24 z" fill="none" stroke="#1B1C1A" stroke-width="4" stroke-linejoin="round"/><circle cx="20" cy="16" r="4" fill="#1B1C1A"/><circle cx="20" cy="32" r="4" fill="#1B1C1A"/><circle cx="20" cy="48" r="4" fill="#1B1C1A"/></svg>
+          KOTLIN_EOF
+          mkdir -p app/src/main/assets/brand
+          cat > app/src/main/assets/brand/bfb-logo-dark.svg <<'KOTLIN_EOF'
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><path d="M24 8 h16 a8 8 0 0 1 0 16 h-16 z M24 24 h20 a8 8 0 0 1 0 16 h-20 z M24 40 h24 a8 8 0 0 1 0 16 h-24 z" fill="none" stroke="#E4E3DD" stroke-width="4" stroke-linejoin="round"/><circle cx="20" cy="16" r="4" fill="#E4E3DD"/><circle cx="20" cy="32" r="4" fill="#E4E3DD"/><circle cx="20" cy="48" r="4" fill="#E4E3DD"/></svg>
+          KOTLIN_EOF
+          mkdir -p app/src/main/assets/brand
+          cat > app/src/main/assets/brand/bfb-logo-mono.svg <<'KOTLIN_EOF'
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><path d="M24 8 h16 a8 8 0 0 1 0 16 h-16 z M24 24 h20 a8 8 0 0 1 0 16 h-20 z M24 40 h24 a8 8 0 0 1 0 16 h-24 z" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/><circle cx="20" cy="16" r="4" fill="#FFFFFF"/><circle cx="20" cy="32" r="4" fill="#FFFFFF"/><circle cx="20" cy="48" r="4" fill="#FFFFFF"/></svg>
+          KOTLIN_EOF
+      - name: Patch README and build.yml
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib, sys
+          def apply(path, old, new, label):
+              p = pathlib.Path(path); t = p.read_text(encoding="utf-8")
+              if new in t: print("skip:", label); return
+              if old not in t: print("ANCHOR MISSING:", label); sys.exit(1)
+              p.write_text(t.replace(old, new, 1), encoding="utf-8"); print("patched:", label)
+
+          apply("README.md", "# LinkDeck",
+          '''# LinkDeck
+
+          > Built For Benefits, by AI — **BFB.AI**
+
+          Brand: `assets/brand/` (SVG x3) · `BFB.txt` inside every archive.''', "README BFB")
+          apply(".github/workflows/build.yml", "name: linkdeck-debug", "name: LinkDeck_Build_${{ github.run_number }}", "artifact debug")
+          apply(".github/workflows/build.yml", "name: linkdeck-release", "name: LinkDeck_Release_${{ github.run_number }}", "artifact release")
+          print("DOCS OK")
+          PYEOF
+      - name: Write new files
+        run: |
+          mkdir -p core-network/src/main/java/com/linkdeck/core/network
+          cat > core-network/src/main/java/com/linkdeck/core/network/P2pMessages.kt <<'KOTLIN_EOF'
+          package com.linkdeck.core.network
+
+          import kotlinx.serialization.Serializable
+
+          /** Wi-Fi Direct pairing: client sends the 6-digit code shown on the host. */
+          @Serializable
+          data class P2pPair(val type: String = "p2p_pair", val code: String)
+
+          /** Reply carrying the long-lived token AND the cert fingerprint (TOFU pinning). */
+          @Serializable
+          data class P2pAuthOk(
+              val deviceId: String,
+              val deviceToken: String,
+              val fingerprint: String,
+          )
+
+          /** Fixed port for Wi-Fi Direct sessions (tried first by the host server). */
+          const val P2P_PORT = 28765
+          KOTLIN_EOF
+          mkdir -p app/src/main/java/com/linkdeck/app/pairing
+          cat > app/src/main/java/com/linkdeck/app/pairing/P2pManager.kt <<'KOTLIN_EOF'
+          package com.linkdeck.app.pairing
+
+          import android.annotation.SuppressLint
+          import android.content.BroadcastReceiver
+          import android.content.Context
+          import android.content.Intent
+          import android.content.IntentFilter
+          import android.net.wifi.p2p.WifiP2pConfig
+          import android.net.wifi.p2p.WifiP2pDevice
+          import android.net.wifi.p2p.WifiP2pInfo
+          import android.net.wifi.p2p.WifiP2pManager
+          import android.os.Looper
+          import kotlinx.coroutines.flow.MutableStateFlow
+          import kotlinx.coroutines.flow.StateFlow
+
+          /**
+           * Wi-Fi Direct (P2P) helper: discover nearby devices, form a group, and read
+           * the group-owner address — a private device-to-device link with no router.
+           */
+          class P2pManager(private val context: Context) {
+
+              private val manager = context.getSystemService(Context.WIFI_P2P_SERVICE) as WifiP2pManager
+              private val channel = manager.initialize(context, Looper.getMainLooper(), null)
+
+              private val _devices = MutableStateFlow<List<WifiP2pDevice>>(emptyList())
+              val devices: StateFlow<List<WifiP2pDevice>> = _devices
+
+              private val _connectionInfo = MutableStateFlow<WifiP2pInfo?>(null)
+              val connectionInfo: StateFlow<WifiP2pInfo?> = _connectionInfo
+
+              private var receiver: BroadcastReceiver? = null
+
+              @SuppressLint("MissingPermission")
+              fun startDiscovery() {
+                  stopDiscovery()
+                  val filter = IntentFilter().apply {
+                      addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION)
+                      addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION)
+                  }
+                  receiver = object : BroadcastReceiver() {
+                      override fun onReceive(c: Context, intent: Intent) {
+                          when (intent.action) {
+                              WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION ->
+                                  manager.requestPeers(channel) { peers ->
+                                      _devices.value = peers.deviceList.toList()
+                                  }
+                              WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION ->
+                                  manager.requestConnectionInfo(channel) { info ->
+                                      _connectionInfo.value = info
+                                  }
+                          }
+                      }
+                  }
+                  runCatching { context.registerReceiver(receiver, filter) }
+                  manager.discoverPeers(channel, silentListener())
+              }
+
+              fun stopDiscovery() {
+                  receiver?.let { runCatching { context.unregisterReceiver(it) } }
+                  receiver = null
+              }
+
+              @SuppressLint("MissingPermission")
+              fun connect(device: WifiP2pDevice) {
+                  val config = WifiP2pConfig().apply { deviceAddress = device.deviceAddress }
+                  manager.connect(channel, config, silentListener())
+              }
+
+              @SuppressLint("MissingPermission")
+              fun createGroup() {
+                  manager.createGroup(channel, silentListener())
+              }
+
+              private fun silentListener() = object : WifiP2pManager.ActionListener {
+                  override fun onSuccess() {}
+                  override fun onFailure(reason: Int) {}
+              }
+          }
+          KOTLIN_EOF
+      - name: Patch existing files
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib, sys
+
+          def apply(path, old, new, label):
+              p = pathlib.Path(path)
+              t = p.read_text(encoding="utf-8")
+              if new in t:
+                  print("skip (already):", label); return
+              if old not in t:
+                  print("ANCHOR MISSING:", label); sys.exit(1)
+              p.write_text(t.replace(old, new, 1), encoding="utf-8")
+              print("patched:", label)
+
+          NET = "core-network/src/main/java/com/linkdeck/core/network"
+          APP = "app/src/main/java/com/linkdeck/app"
+
+          apply(APP + "/pairing/PairingManager.kt",
+              'val reply = incoming.tryReceive().getOrNull() as? Frame.Text',
+              'val reply = incoming.receive() as? Frame.Text',
+              "PM receive")
+          apply(APP + "/pairing/PairingManager.kt",
+              'import com.linkdeck.core.network.PairingPayload',
+              'import com.linkdeck.core.network.PairingPayload\nimport com.linkdeck.core.network.P2pAuthOk\nimport com.linkdeck.core.network.P2pPair',
+              "PM imports")
+
+          PM_BLOCK = '''
+              private val _p2pCode = MutableStateFlow<String?>(null)
+              val p2pCode: StateFlow<String?> = _p2pCode
+
+              /* Host: start the server (fixed port preferred) and issue a Wi-Fi Direct code. */
+              fun hostStartP2p(): String {
+                  hostStart()
+                  return hostServer.newP2pCode()
+              }
+
+              /* Host: auto-start Wi-Fi Direct group and expose the pairing code. */
+              fun hostAutoP2p() {
+                  if (_p2pCode.value != null) return
+                  val p2p = P2pManager(context)
+                  p2p.startDiscovery()
+                  p2p.createGroup()
+                  scope.launch {
+                      p2p.connectionInfo.collect { info ->
+                          if (info?.isGroupOwner == true && _p2pCode.value == null) {
+                              _p2pCode.value = hostStartP2p()
+                          }
+                      }
+                  }
+              }
+
+              /* Wi-Fi Direct pairing over the P2P link with the 6-digit code shown on the host. */
+              suspend fun pairOverP2p(ip: String, port: Int, code: String): Result<TrustedDevice> = withContext(Dispatchers.IO) {
+                  runCatching {
+                      val trustAll = object : javax.net.ssl.X509TrustManager {
+                          override fun checkServerTrusted(chain: Array<out java.security.cert.X509Certificate>, authType: String) {}
+                          override fun checkClientTrusted(chain: Array<out java.security.cert.X509Certificate>, authType: String) {}
+                          override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = emptyArray()
+                      }
+                      val sslContext = SSLContext.getInstance("TLS").apply { init(null, arrayOf(trustAll), null) }
+                      val client = HttpClient(OkHttp) {
+                          install(WebSockets)
+                          engine {
+                              config {
+                                  sslSocketFactory(sslContext.socketFactory, trustAll)
+                                  hostnameVerifier { _, _ -> true }
+                                  connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                                  readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                                  writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                              }
+                          }
+                      }
+                      try {
+                          var trusted: TrustedDevice? = null
+                          client.webSocket(urlString = "wss://" + ip + ":" + port + "/ws") {
+                              send(Frame.Text(Json.encodeToString(P2pPair.serializer(), P2pPair(code = code))))
+                              val reply = incoming.receive() as? Frame.Text ?: throw SecurityException("no reply")
+                              val text = reply.readText()
+                              val env = runCatching { Json.decodeFromString(com.linkdeck.core.network.Envelope.serializer(), text) }.getOrNull()
+                                  ?: throw SecurityException("p2p rejected: " + text)
+                              if (env.type != "p2p_auth_ok") throw SecurityException("p2p rejected: " + text)
+                              val ok = Json.decodeFromString(P2pAuthOk.serializer(), env.payload)
+                              trusted = TrustedDevice(
+                                  id = ok.deviceId,
+                                  name = deviceName(),
+                                  model = "Wi-Fi Direct",
+                                  ip = ip,
+                                  port = port,
+                                  fingerprint = ok.fingerprint,
+                                  token = ok.deviceToken,
+                              )
+                          }
+                          val device = trusted ?: throw SecurityException("p2p handshake incomplete")
+                          trustedStore.upsert(device)
+                          connectionManager.connect(device)
+                          device
+                      } finally {
+                          client.close()
+                      }
+                  }.fold(
+                      onSuccess = {
+                          com.linkdeck.core.network.DebugLog.log("Pair", "p2p pairing success")
+                          Result.success(it)
+                      },
+                      onFailure = {
+                          com.linkdeck.core.network.DebugLog.log("Pair", "p2p failed: " + describe(it))
+                          Result.failure(PairingException.Detail(describe(it)))
+                      },
+                  )
+              }
+
+              /** Starts mDNS browsing for previously paired hosts on the LAN. */'''
+          apply(APP + "/pairing/PairingManager.kt",
+              '    /** Starts mDNS browsing for previously paired hosts on the LAN. */',
+              PM_BLOCK,
+              "PM p2p functions")
+
+          apply(NET + "/HostServer.kt",
+              '    var commandHandler: ((String) -> String?)? = null',
+              '''    var commandHandler: ((String) -> String?)? = null
+
+              /** 6-digit Wi-Fi Direct pairing code. */
+              @Volatile
+              private var p2pCode: String? = null
+
+              fun newP2pCode(): String {
+                  val code = (100000..999999).random().toString()
+                  p2pCode = code
+                  return code
+              }
+
+              private fun isP2pCodeValid(code: String): Boolean = p2pCode != null && p2pCode == code''',
+              "HS p2p state")
+
+          apply(NET + "/HostServer.kt",
+              '''        val first = incoming.receive() as? Frame.Text ?: return reject("no auth frame")
+                  val auth = runCatching {
+                      kotlinx.serialization.json.Json.decodeFromString<AuthMessage>(first.readText())
+                  }.getOrNull() ?: return reject("malformed auth")''',
+              '''        val first = incoming.receive() as? Frame.Text ?: return reject("no auth frame")
+                  val raw = first.readText()
+                  val auth = runCatching {
+                      kotlinx.serialization.json.Json.decodeFromString<AuthMessage>(raw)
+                  }.getOrNull()
+                  if (auth == null) {
+                      val p2p = runCatching {
+                          kotlinx.serialization.json.Json.decodeFromString(P2pPair.serializer(), raw)
+                      }.getOrNull()
+                      if (p2p != null && isP2pCodeValid(p2p.code)) {
+                          p2pCode = null
+                          val deviceId = UUID.randomUUID().toString().replace("-", "")
+                          val deviceToken = UUID.randomUUID().toString().replace("-", "")
+                          deviceTokens[deviceId] = deviceToken
+                          val payload = kotlinx.serialization.json.Json.encodeToString(
+                              P2pAuthOk.serializer(),
+                              P2pAuthOk(deviceId = deviceId, deviceToken = deviceToken, fingerprint = identity.certificateFingerprint),
+                          )
+                          val env = kotlinx.serialization.json.Json.encodeToString(
+                              Envelope.serializer(), Envelope(0, "p2p_auth_ok", payload),
+                          )
+                          send(Frame.Text(env))
+                          DebugLog.log("Host", "p2p pairing OK device=" + deviceId)
+                          return deviceId
+                      }
+                      return reject("malformed auth")
+                  }''',
+              "HS authenticate")
+
+          apply(NET + "/HostServer.kt",
+              '''    private fun findFreePort(): Int {
+                  for (attempt in 0 until 20) {''',
+              '''    private fun findFreePort(): Int {
+                  runCatching { ServerSocket(P2P_PORT).use { return P2P_PORT } }
+                  for (attempt in 0 until 20) {''',
+              "HS fixed port")
+
+          print("ALL PATCHES OK")
+          PYEOF
+      - name: Add strings
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib
+          en = '    <string name="p2p_host_start">Wi-Fi Direct (no network needed)</string>\n    <string name="p2p_code_is">Code: %1$s</string>\n    <string name="p2p_connect">Wi-Fi Direct pairing</string>\n    <string name="p2p_hint">Enable Wi-Fi Direct on the phone, then tap its name here.</string>\n    <string name="p2p_empty">No nearby devices found.</string>\n    <string name="p2p_enter_code">6-digit code shown on the phone</string>\n'
+          ar = '    <string name="p2p_host_start">واي فاي دايركت (بدون شبكة)</string>\n    <string name="p2p_code_is">الكود: %1$s</string>\n    <string name="p2p_connect">اقتران Wi-Fi Direct</string>\n    <string name="p2p_hint">فعّل Wi-Fi Direct على الهاتف ثم اضغط على اسمه هنا.</string>\n    <string name="p2p_empty">لا توجد أجهزة قريبة.</string>\n    <string name="p2p_enter_code">الكود الستة أرقام الظاهر على الهاتف</string>\n'
+          for path, block in [("app/src/main/res/values/strings.xml", en), ("app/src/main/res/values-ar/strings.xml", ar)]:
+              p = pathlib.Path(path)
+              t = p.read_text(encoding="utf-8")
+              if 'name="p2p_connect"' not in t:
+                  p.write_text(t.replace("</resources>", block + "</resources>"), encoding="utf-8")
+          print("strings OK")
+          PYEOF
+      - name: Write security utils
+        run: |
+          mkdir -p app/src/main/java/com/linkdeck/app/security
+          cat > app/src/main/java/com/linkdeck/app/security/SecurityCheck.kt <<'KOTLIN_EOF'
+          package com.linkdeck.app.security
+
+          /** Basic device integrity checks (rooted / test build). */
+          object SecurityCheck {
+
+              fun isDeviceRooted(): Boolean {
+                  val paths = arrayOf(
+                      "/system/bin/su", "/system/xbin/su", "/sbin/su",
+                      "/system/app/Superuser.apk", "/magisk/.core/bin/su",
+                  )
+                  if (paths.any { java.io.File(it).exists() }) return true
+                  return runCatching {
+                      val p = Runtime.getRuntime().exec(arrayOf("/system/xbin/which", "su"))
+                      val found = p.inputStream.bufferedReader().readLine() != null
+                      p.destroy()
+                      found
+                  }.getOrDefault(false)
+              }
+
+              fun isTestBuild(): Boolean =
+                  android.os.Build.TAGS?.contains("test-keys") == true
+          }
+          KOTLIN_EOF
+      - name: Patch app files
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib, sys
+
+          def apply(path, old, new, label):
+              p = pathlib.Path(path); t = p.read_text(encoding="utf-8")
+              if new in t: print("skip:", label); return
+              if old not in t: print("ANCHOR MISSING:", label); sys.exit(1)
+              p.write_text(t.replace(old, new, 1), encoding="utf-8"); print("patched:", label)
+
+          NET = "core-network/src/main/java/com/linkdeck/core/network"
+          APP = "app/src/main/java/com/linkdeck/app"
+          apply(NET + "/Tls.kt", "val storePass = \"linkdeck-selfsigned\"", 'val tlsPrefs = context.getSharedPreferences("linkdeck_tls", android.content.Context.MODE_PRIVATE)\n            val storePass = tlsPrefs.getString("pass", null)\n                ?: java.util.UUID.randomUUID().toString().also {\n                    tlsPrefs.edit().putString("pass", it).apply()\n                }', "TLS passphrase")
+
+          p = pathlib.Path(APP + "/MainActivity.kt"); t = p.read_text(encoding="utf-8")
+          CRASH_NEW = '    crash?.let { raw ->\n        val prefs = remember {\n            context.getSharedPreferences("linkdeck_privacy", android.content.Context.MODE_PRIVATE)\n        }\n        if (prefs.getBoolean("crash_reports", true)) {\n            val log = raw\n                .replace(context.filesDir.absolutePath, "<app>")\n                .replace(context.cacheDir.absolutePath, "<cache>")\n            AlertDialog(\n                onDismissRequest = { crash = null },\n                title = { Text("Crash report") },\n                text = { Text(log.take(3000)) },\n                confirmButton = {\n                    TextButton(onClick = { crash = null }) { Text("OK") }\n                },\n                dismissButton = {\n                    Row {\n                        TextButton(onClick = {\n                            val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {\n                                type = "text/plain"\n                                putExtra(android.content.Intent.EXTRA_SUBJECT, "LinkDeck crash")\n                                putExtra(android.content.Intent.EXTRA_TEXT, log)\n                            }\n                            runCatching { context.startActivity(android.content.Intent.createChooser(send, null)) }\n                        }) { Text(stringResource(com.linkdeck.app.R.string.crash_share)) }\n                        TextButton(onClick = {\n                            prefs.edit().putBoolean("crash_reports", false).apply()\n                            crash = null\n                        }) { Text(stringResource(com.linkdeck.app.R.string.crash_hide)) }\n                    }\n                },\n            )\n        }\n    }'
+          CRASH_OLD_V1 = '    crash?.let { log ->\n        AlertDialog(\n            onDismissRequest = { crash = null },\n            title = { Text("Crash report") },\n            text = { Text(log.take(3000)) },\n            confirmButton = {\n                TextButton(onClick = { crash = null }) { Text("OK") }\n            },\n        )\n    }'
+          if CRASH_NEW in t:
+              print("skip: crash dialog")
+          elif CRASH_OLD_V1 in t:
+              p.write_text(t.replace(CRASH_OLD_V1, CRASH_NEW, 1), encoding="utf-8"); print("patched: crash dialog")
+          else:
+              print("ANCHOR MISSING: crash dialog"); sys.exit(1)
+          apply("app/src/main/res/values/strings.xml", "</resources>", '    <string name="crash_share">Share</string>\n    <string name="crash_hide">Never show</string>\n</resources>', "strings EN")
+          apply("app/src/main/res/values-ar/strings.xml", "</resources>", '    <string name="crash_share">مشاركة</string>\n    <string name="crash_hide">لا تعرض مرة أخرى</string>\n</resources>', "strings AR")
+          print("ALL OK")
+          PYEOF
+      - name: Repair escapes (idempotent)
+        run: |
+          sed -i 's/\\\\"/\\"/g' core-network/src/main/java/com/linkdeck/core/network/HostServer.kt core-network/src/main/java/com/linkdeck/core/network/ConnectionManager.kt 2>/dev/null || true
+      - name: Pairing client wait fix (idempotent)
+        run: |
+          sed -i 's/incoming\.tryReceive()\.getOrNull() as? Frame\.Text/incoming.receive() as? Frame.Text/' app/src/main/java/com/linkdeck/app/pairing/PairingManager.kt
+      - name: Commit and push
+        run: |
+          git config user.name "Mohammedazizhedia"
+          git config user.email "mohammedazizhedia@gmail.com"
+          git add -A
+          git commit -m "Final: all fixes + P2P + BFB compliance"
+          git push
