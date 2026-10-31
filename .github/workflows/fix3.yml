@@ -1,0 +1,23 @@
+name: Fix Client Reply Wait
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make the pairing client wait for the reply
+        run: |
+          sed -i 's/incoming\.tryReceive()\.getOrNull() as? Frame\.Text/incoming.receive() as? Frame.Text/' app/src/main/java/com/linkdeck/app/pairing/PairingManager.kt
+          grep -n "incoming.receive()" app/src/main/java/com/linkdeck/app/pairing/PairingManager.kt
+      - name: Commit and push
+        run: |
+          git config user.name "Mohammedazizhedia"
+          git config user.email "mohammedazizhedia@gmail.com"
+          git add -A
+          git commit -m "Pairing client: wait for host reply (receive)"
+          git push
