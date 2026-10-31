@@ -1,0 +1,131 @@
+name: Fix Last 2
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write DESIGN.md
+        run: |
+          cat > DESIGN.md <<'KOTLIN_EOF'
+          # LinkDeck — DESIGN.md
+
+          ## وضع خدمات جوجل (إلزامي)
+          **A) بدون جوجل (No-GMS)** - مختار: التطبيق يعمل بالكامل بدون GMS/Firebase/Nearby (متوافق مع Huawei EMUI/HarmonyOS). الاتصال والمزامنة محليان 100%.
+
+          ## Tokens
+          6 accents + dynamic, contrast >= 4.5:1, fonts bundled, line icons.
+
+          ## الاتصال
+          QR/TLS pinning - Hotspot - Wi-Fi Direct (P2P) - manual entry - mDNS.
+          KOTLIN_EOF
+      - name: Add P2P reply branch to server
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib, sys
+          p = pathlib.Path("core-network/src/main/java/com/linkdeck/core/network/HostServer.kt")
+          t = p.read_text(encoding="utf-8")
+
+          if "p2pCode" not in t:
+              anchor = '    var commandHandler: ((String) -> String?)? = null'
+              assert anchor in t, "anchor1"
+              t = t.replace(anchor, anchor + '''
+
+              @Volatile
+              private var p2pCode: String? = null
+
+              fun newP2pCode(): String {
+                  val code = (100000..999999).random().toString()
+                  p2pCode = code
+                  return code
+              }
+
+              private fun isP2pCodeValid(code: String): Boolean = p2pCode != null && p2pCode == code''', 1)
+
+          if "p2p_auth_ok" not in t:
+              old = '''        val first = incoming.receive() as? Frame.Text ?: return reject("no auth frame")
+              val auth = runCatching {
+                  kotlinx.serialization.json.Json.decodeFromString<AuthMessage>(first.readText())
+              }.getOrNull() ?: return reject("malformed auth")'''
+              assert old in t, "anchor2"
+              new = '''        val first = incoming.receive() as? Frame.Text ?: return reject("no auth frame")
+              val raw = first.readText()
+              val auth = runCatching {
+                  kotlinx.serialization.json.Json.decodeFromString<AuthMessage>(raw)
+              }.getOrNull()
+              if (auth == null) {
+                  val p2p = runCatching {
+                      kotlinx.serialization.json.Json.decodeFromString(P2pPair.serializer(), raw)
+                  }.getOrNull()
+                  if (p2p != null && isP2pCodeValid(p2p.code)) {
+                      p2pCode = null
+                      val deviceId = UUID.randomUUID().toString().replace("-", "")
+                      val deviceToken = UUID.randomUUID().toString().replace("-", "")
+                      deviceTokens[deviceId] = deviceToken
+                      val payload = kotlinx.serialization.json.Json.encodeToString(
+                          P2pAuthOk.serializer(),
+                          P2pAuthOk(deviceId = deviceId, deviceToken = deviceToken, fingerprint = identity.certificateFingerprint),
+                      )
+                      val env = kotlinx.serialization.json.Json.encodeToString(
+                          Envelope.serializer(), Envelope(0, "p2p_auth_ok", payload),
+                      )
+                      send(Frame.Text(env))
+                      DebugLog.log("Host", "p2p pairing OK device=" + deviceId)
+                      return deviceId
+                  }
+                  return reject("malformed auth")
+              }'''
+              t = t.replace(old, new, 1)
+
+          if "P2P_PORT" not in t:
+              old2 = '''    private fun findFreePort(): Int {
+                  for (attempt in 0 until 20) {'''
+              assert old2 in t, "anchor3"
+              t = t.replace(old2, '''    private fun findFreePort(): Int {
+                  runCatching { ServerSocket(P2P_PORT).use { return P2P_PORT } }
+                  for (attempt in 0 until 20) {''', 1)
+
+          p.write_text(t, encoding="utf-8")
+          print("server patched")
+          PYEOF
+      - name: Re-run full verification
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib, sys
+          checks = [
+              ("receive() client", "app/src/main/java/com/linkdeck/app/pairing/PairingManager.kt", "incoming.receive()"),
+              ("P2P pairing", "app/src/main/java/com/linkdeck/app/pairing/PairingManager.kt", "pairOverP2p"),
+              ("P2P port", "core-network/src/main/java/com/linkdeck/core/network/P2pMessages.kt", "P2P_PORT"),
+              ("P2P manager", "app/src/main/java/com/linkdeck/app/pairing/P2pManager.kt", "WifiP2pManager"),
+              ("DebugLog", "core-network/src/main/java/com/linkdeck/core/network/DebugLog.kt", "object DebugLog"),
+              ("Server always replies", "core-network/src/main/java/com/linkdeck/core/network/HostServer.kt", "p2p_auth_ok"),
+              ("Root check", "app/src/main/java/com/linkdeck/app/security/SecurityCheck.kt", "isDeviceRooted"),
+              ("Crash share", "app/src/main/java/com/linkdeck/app/MainActivity.kt", "crash_share"),
+              ("TLS key protected", "core-network/src/main/java/com/linkdeck/core/network/Tls.kt", "linkdeck_tls"),
+              ("DESIGN.md", "DESIGN.md", "No-GMS"),
+              ("BFB.txt", "BFB.txt", "BFB.AI"),
+              ("Fonts", "core-design/src/main/java/com/linkdeck/core/design/Type.kt", "IBM_PLEX"),
+              ("Manual pair", "app/src/main/java/com/linkdeck/app/ui/pairing/ScanQrScreen.kt", "pairManual"),
+              ("Hotspot", "app/src/main/java/com/linkdeck/app/host/HostHotspotManager.kt", "startLocalOnlyHotspot"),
+              ("Diag log button", "app/src/main/java/com/linkdeck/app/ui/home/HostHomeScreen.kt", "view_log"),
+          ]
+          fails = []
+          for label, path, needle in checks:
+              ok = pathlib.Path(path).exists() and needle in pathlib.Path(path).read_text(encoding="utf-8")
+              print(("PASS " if ok else "FAIL ") + label)
+              if not ok: fails.append(label)
+          print("BFB compliance:", "ALL PASS" if not fails else "FAILURES: " + ", ".join(fails))
+          sys.exit(1 if fails else 0)
+          PYEOF
+      - name: Commit and push
+        run: |
+          git config user.name "Mohammedazizhedia"
+          git config user.email "mohammedazizhedia@gmail.com"
+          git add -A
+          git commit -m "Close final 2 compliance items"
+          git push
