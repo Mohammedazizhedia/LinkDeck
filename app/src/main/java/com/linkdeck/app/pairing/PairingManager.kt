@@ -145,7 +145,7 @@ class PairingManager @Inject constructor(
                 var trusted: TrustedDevice? = null
                 client.webSocket(urlString = "wss://${payload.ip}:${payload.port}/ws") {
                     send(Frame.Text(Json.encodeToString(AuthMessage.serializer(), AuthMessage(token = payload.token))))
-                    val reply = incoming.tryReceive().getOrNull() as? Frame.Text
+                    val reply = incoming.receive() as? Frame.Text
                         ?: throw SecurityException("Host did not reply")
                     val text = reply.readText()
                     if (!text.contains("\"auth_ok\"")) throw SecurityException("Pairing rejected: $text")
