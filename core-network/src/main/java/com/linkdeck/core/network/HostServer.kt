@@ -1,5 +1,4 @@
 package com.linkdeck.core.network
-
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
@@ -19,61 +18,54 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-
 sealed interface HostEvent {
     data class ControllerConnected(val deviceId: String) : HostEvent
     data class ControllerDisconnected(val deviceId: String) : HostEvent
 }
-
-/** TLS WebSocket server on the HOST (Netty engine). */
 class HostServer(
     private val identity: TlsIdentity,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
     private var server: ApplicationEngine? = null
-
     private val _events = MutableStateFlow<HostEvent?>(null)
     val events: StateFlow<HostEvent?> = _events
-
     @Volatile private var qrToken: String? = null
     @Volatile private var qrTokenExpiresAt: Long = 0L
-
     private val deviceTokens = ConcurrentHashMap<String, String>()
     private val sessions = ConcurrentHashMap<String, DefaultWebSocketServerSession>()
-
     @Volatile
     var commandHandler: ((String) -> String?)? = null
-
+    @Volatile
+    private var p2pCode: String? = null
+    fun newP2pCode(): String {
+        val code = (100000..999999).random().toString()
+        p2pCode = code
+        return code
+    }
+    private fun isP2pCodeValid(code: String): Boolean = p2pCode != null && p2pCode == code
     @Volatile
     var boundPort: Int = -1
         private set
-
     val connectedCount: Int get() = sessions.size
     val isRunning: Boolean get() = server != null
-
     fun newPairingToken(validityMillis: Long = 120_000L): String {
         val token = UUID.randomUUID().toString().replace("-", "")
         qrToken = token
         qrTokenExpiresAt = System.currentTimeMillis() + validityMillis
         return token
     }
-
     fun isQrTokenValid(token: String): Boolean {
         val t = qrToken ?: return false
         return t == token && System.currentTimeMillis() < qrTokenExpiresAt
     }
-
     fun pairedDeviceIds(): Set<String> = deviceTokens.keys.toSet()
-
     fun revokeDevice(deviceId: String) {
         deviceTokens.remove(deviceId)
         sessions.remove(deviceId)?.let { s -> scope.launch { runCatching { s.close() } } }
     }
-
     fun start(): Int {
         check(server == null) { "HostServer already started" }
         val port = findFreePort()
-
         val environment = applicationEngineEnvironment {
             sslConnector(
                 keyStore = identity.keyStore,
@@ -86,7 +78,6 @@ class HostServer(
             }
             module { appModule() }
         }
-
         val engine = embeddedServer(Netty, environment)
         server = engine
         engine.start(wait = false)
@@ -94,7 +85,6 @@ class HostServer(
         DebugLog.log("Host", "server started on port $boundPort")
         return boundPort
     }
-
     private fun Application.appModule() {
         install(ContentNegotiation) { json() }
         install(WebSockets)
@@ -117,7 +107,7 @@ class HostServer(
                         _events.value = HostEvent.ControllerDisconnected(deviceId)
                     }
                 } catch (t: Throwable) {
-                    DebugLog.log("Host", "ws error: ${t.javaClass.simpleName}: ${t.message}")
+                    DebugLog.log("Host", "ws error: ${'$'}{t.javaClass.simpleName}: ${'$'}{t.message}")
                     runCatching {
                         send(Frame.Text("{\"type\":\"auth_error\",\"reason\":\"server:" + t.javaClass.simpleName + ":" + (t.message ?: "").take(120) + "\"}"))
                     }
@@ -126,15 +116,36 @@ class HostServer(
             }
         }
     }
-
     private suspend fun DefaultWebSocketServerSession.authenticate(): String? {
         val first = incoming.receive() as? Frame.Text ?: return reject("no auth frame")
+        val raw = first.readText()
         val auth = runCatching {
-            kotlinx.serialization.json.Json.decodeFromString<AuthMessage>(first.readText())
-        }.getOrNull() ?: return reject("malformed auth")
+            kotlinx.serialization.json.Json.decodeFromString<AuthMessage>(raw)
+        }.getOrNull()
+        if (auth == null) {
+            val p2p = runCatching {
+                kotlinx.serialization.json.Json.decodeFromString(P2pPair.serializer(), raw)
+            }.getOrNull()
+            if (p2p != null && isP2pCodeValid(p2p.code)) {
+                p2pCode = null
+                val deviceId = UUID.randomUUID().toString().replace("-", "")
+                val deviceToken = UUID.randomUUID().toString().replace("-", "")
+                deviceTokens[deviceId] = deviceToken
+                val payload = kotlinx.serialization.json.Json.encodeToString(
+                    P2pAuthOk.serializer(),
+                    P2pAuthOk(deviceId = deviceId, deviceToken = deviceToken, fingerprint = identity.certificateFingerprint),
+                )
+                val env = kotlinx.serialization.json.Json.encodeToString(
+                    Envelope.serializer(), Envelope(0, "p2p_auth_ok", payload),
+                )
+                send(Frame.Text(env))
+                DebugLog.log("Host", "p2p pairing OK device=$deviceId")
+                return deviceId
+            }
+            return reject("malformed auth")
+        }
         DebugLog.log("Host", "auth attempt token=${auth.token.take(10)} valid=${isQrTokenValid(auth.token)}")
         val deviceId = UUID.randomUUID().toString().replace("-", "")
-
         return when {
             isQrTokenValid(auth.token) -> {
                 qrToken = null
@@ -152,13 +163,11 @@ class HostServer(
             else -> reject("invalid or expired token")
         }
     }
-
     private suspend fun DefaultWebSocketServerSession.reject(reason: String): String? {
         send(Frame.Text(kotlinx.serialization.json.Json.encodeToString(AuthError.serializer(), AuthError(reason = reason))))
         close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, reason))
         return null
     }
-
     private fun handleText(deviceId: String, text: String) {
         if (text.contains("\"ping\"")) {
             scope.launch { runCatching { sessions[deviceId]?.send(Frame.Text(text)) } }
@@ -167,7 +176,6 @@ class HostServer(
         val env = runCatching {
             kotlinx.serialization.json.Json.decodeFromString(Envelope.serializer(), text)
         }.getOrNull() ?: return
-
         when (env.type) {
             "file_list" -> {
                 val req = runCatching {
@@ -202,14 +210,12 @@ class HostServer(
             else -> Unit
         }
     }
-
     private fun reply(deviceId: String, id: Long, type: String, payload: String) {
         val msg = runCatching {
             kotlinx.serialization.json.Json.encodeToString(Envelope.serializer(), Envelope(id, type, payload))
         }.getOrNull() ?: return
         scope.launch { runCatching { sessions[deviceId]?.send(Frame.Text(msg)) } }
     }
-
     fun broadcast(type: String, payloadJson: String) {
         val msg = runCatching {
             kotlinx.serialization.json.Json.encodeToString(Envelope.serializer(), Envelope(0, type, payloadJson))
@@ -218,15 +224,14 @@ class HostServer(
             sessions.values.forEach { runCatching { it.send(Frame.Text(msg)) } }
         }
     }
-
     fun stop() {
         server?.let { runCatching { it.stop(500L, 1500L) } }
         server = null
         boundPort = -1
         sessions.clear()
     }
-
     private fun findFreePort(): Int {
+        runCatching { ServerSocket(P2P_PORT).use { return P2P_PORT } }
         for (attempt in 0 until 20) {
             val candidate = 28000 + Random.nextInt(0, 20000)
             runCatching { ServerSocket(candidate).use { return candidate } }

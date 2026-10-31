@@ -206,4 +206,5 @@
     <string name="p2p_hint">فعّل Wi-Fi Direct على الهاتف ثم اضغط على اسمه هنا.</string>
     <string name="p2p_empty">لا توجد أجهزة قريبة.</string>
     <string name="p2p_enter_code">الكود الستة أرقام الظاهر على الهاتف</string>
+    <string name="copy_error">نسخ الخطأ</string>
 </resources>

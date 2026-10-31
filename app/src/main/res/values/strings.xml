@@ -206,4 +206,5 @@
     <string name="p2p_hint">Enable Wi-Fi Direct on the phone, then tap its name here.</string>
     <string name="p2p_empty">No nearby devices found.</string>
     <string name="p2p_enter_code">6-digit code shown on the phone</string>
+    <string name="copy_error">Copy error</string>
 </resources>
