@@ -1,5 +1,4 @@
 package com.linkdeck.app.pairing
-
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.wifi.WifiManager
@@ -12,6 +11,8 @@ import com.linkdeck.core.network.HostServer
 import com.linkdeck.core.network.NsdDiscovery
 import com.linkdeck.core.network.NsdRegistration
 import com.linkdeck.core.network.PairingPayload
+import com.linkdeck.core.network.P2pAuthOk
+import com.linkdeck.core.network.P2pPair
 import com.linkdeck.core.network.PinnedTrustManager
 import com.linkdeck.core.network.TlsIdentity
 import com.linkdeck.core.network.TrustedDevice
@@ -36,14 +37,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-
-/** Everything the UI needs to show the host's QR code. */
 data class HostQrState(
     val payload: PairingPayload? = null,
     val secondsLeft: Int = 0,
 )
-
-/** One-stop manager for QR pairing on both sides. */
 @Singleton
 class PairingManager @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -56,16 +53,10 @@ class PairingManager @Inject constructor(
 ) {
     private val registration = NsdRegistration(nsdManager)
     private var qrJob: kotlinx.coroutines.Job? = null
-
     private val _hostQr = MutableStateFlow(HostQrState())
     val hostQr: StateFlow<HostQrState> = _hostQr
-
     private val discovery = NsdDiscovery(nsdManager, scope)
     val discovered: StateFlow<List<DiscoveredDevice>> = discovery.devices
-
-    // ---------------------------------------------------------------- HOST --
-
-    /** Starts the TLS server + mDNS (if needed) and begins broadcasting a fresh QR token. */
     fun hostStart() {
         if (!hostServer.isRunning) {
             hostServer.start()
@@ -75,8 +66,6 @@ class PairingManager @Inject constructor(
         }
         registration.register("LinkDeck-${android.os.Build.MODEL}", hostServer.boundPort)
     }
-
-    /** Hotspot / DHCP can move us to a different address — refresh IP + port in the QR. */
     fun refreshAdvertisedAddress() {
         val cur = _hostQr.value.payload ?: return
         val ip = localIpAddress() ?: "0.0.0.0"
@@ -84,7 +73,6 @@ class PairingManager @Inject constructor(
             rotateQrToken()
         }
     }
-
     fun hostStop() {
         qrJob?.cancel()
         qrJob = null
@@ -92,8 +80,6 @@ class PairingManager @Inject constructor(
         hostServer.stop()
         _hostQr.value = HostQrState()
     }
-
-    /** Rotates the 2-minute one-time token and rebuilds the QR payload. */
     fun rotateQrToken() {
         qrJob?.cancel()
         val token = hostServer.newPairingToken(validityMillis = 120_000L)
@@ -119,14 +105,9 @@ class PairingManager @Inject constructor(
             }
         }
     }
-
-    // ---------------------------------------------------------- CONTROLLER --
-
-    /** Validates a scanned QR and performs the pinned-TLS auth handshake. */
     suspend fun pairWithPayload(payload: PairingPayload): Result<TrustedDevice> = withContext(Dispatchers.IO) {
         if (payload.isExpired()) return@withContext Result.failure(PairingException.TokenExpired)
         if (payload.port <= 0) return@withContext Result.failure(PairingException.InvalidPayload)
-
         runCatching {
             val trustManager = PinnedTrustManager(setOf(payload.fp))
             val sslContext = SSLContext.getInstance("TLS").apply {
@@ -138,6 +119,9 @@ class PairingManager @Inject constructor(
                     config {
                         sslSocketFactory(sslContext.socketFactory, trustManager)
                         hostnameVerifier { _, _ -> true }
+                        connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                        readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                        writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                     }
                 }
             }
@@ -168,25 +152,86 @@ class PairingManager @Inject constructor(
                 client.close()
             }
         }.fold(
-            onSuccess = { Result.success(it) },
-            onFailure = { Result.failure(PairingException.Detail(describe(it))) },
+            onSuccess = {
+                com.linkdeck.core.network.DebugLog.log("Pair", "pairing success: ${'$'}{it.name}")
+                Result.success(it)
+            },
+            onFailure = {
+                com.linkdeck.core.network.DebugLog.log("Pair", "pairing failed: ${'$'}{describe(it)}")
+                Result.failure(PairingException.Detail(describe(it)))
+            },
         )
     }
-
-    /** Starts mDNS browsing for previously paired hosts on the LAN. */
+    fun hostStartP2p(): String {
+        hostStart()
+        return hostServer.newP2pCode()
+    }
+    suspend fun pairOverP2p(ip: String, port: Int, code: String): Result<TrustedDevice> = withContext(Dispatchers.IO) {
+        runCatching {
+            val trustAll = object : javax.net.ssl.X509TrustManager {
+                override fun checkServerTrusted(chain: Array<out java.security.cert.X509Certificate>, authType: String) {}
+                override fun checkClientTrusted(chain: Array<out java.security.cert.X509Certificate>, authType: String) {}
+                override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = emptyArray()
+            }
+            val sslContext = SSLContext.getInstance("TLS").apply { init(null, arrayOf(trustAll), null) }
+            val client = HttpClient(OkHttp) {
+                install(WebSockets)
+                engine {
+                    config {
+                        sslSocketFactory(sslContext.socketFactory, trustAll)
+                        hostnameVerifier { _, _ -> true }
+                        connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                        readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                        writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                    }
+                }
+            }
+            try {
+                var trusted: TrustedDevice? = null
+                client.webSocket(urlString = "wss://$ip:$port/ws") {
+                    send(Frame.Text(Json.encodeToString(P2pPair.serializer(), P2pPair(code = code))))
+                    val reply = incoming.receive() as? Frame.Text ?: throw SecurityException("no reply")
+                    val text = reply.readText()
+                    val env = runCatching { Json.decodeFromString(com.linkdeck.core.network.Envelope.serializer(), text) }.getOrNull()
+                        ?: throw SecurityException("p2p rejected: $text")
+                    if (env.type != "p2p_auth_ok") throw SecurityException("p2p rejected: $text")
+                    val ok = Json.decodeFromString(P2pAuthOk.serializer(), env.payload)
+                    trusted = TrustedDevice(
+                        id = ok.deviceId,
+                        name = deviceName(),
+                        model = "Wi-Fi Direct",
+                        ip = ip,
+                        port = port,
+                        fingerprint = ok.fingerprint,
+                        token = ok.deviceToken,
+                    )
+                }
+                val device = trusted ?: throw SecurityException("p2p handshake incomplete")
+                trustedStore.upsert(device)
+                connectionManager.connect(device)
+                device
+            } finally {
+                client.close()
+            }
+        }.fold(
+            onSuccess = {
+                com.linkdeck.core.network.DebugLog.log("Pair", "p2p pairing success")
+                Result.success(it)
+            },
+            onFailure = {
+                com.linkdeck.core.network.DebugLog.log("Pair", "p2p failed: ${describe(it)}")
+                Result.failure(PairingException.Detail(describe(it)))
+            },
+        )
+    }
     fun startDiscovery() = discovery.start()
     fun stopDiscovery() = discovery.stop()
-
     fun connectTo(device: TrustedDevice) = connectionManager.connect(device)
     fun disconnect() = connectionManager.disconnect()
-
-    // ---------------------------------------------------------------- utils --
-
     fun deviceName(): String = runCatching {
         val name = android.provider.Settings.Global.getString(context.contentResolver, "device_name")
         name?.takeIf { it.isNotBlank() }
     }.getOrNull() ?: android.os.Build.MODEL
-
     private fun localIpAddress(): String? = runCatching {
         NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }
             .filterIsInstance<Inet4Address>()
@@ -197,8 +242,6 @@ class PairingManager @Inject constructor(
         val ip = wm.connectionInfo.ipAddress
         if (ip != 0) "%d.%d.%d.%d".format(ip and 0xff, ip shr 8 and 0xff, ip shr 16 and 0xff, ip shr 24 and 0xff) else null
     }.getOrNull()
-
-    /** Full error chain: "SSLHandshakeException: ...  <<  CertPathValidatorException: ..." */
     private fun describe(e: Throwable): String {
         val sb = StringBuilder()
         var cur: Throwable? = e
@@ -210,7 +253,6 @@ class PairingManager @Inject constructor(
         }
         return sb.toString().ifEmpty { "unknown" }
     }
-
     sealed class PairingException(msg: String) : Exception(msg) {
         data object TokenExpired : PairingException("token expired")
         data object InvalidPayload : PairingException("invalid payload")

@@ -1,5 +1,4 @@
 package com.linkdeck.app.host
-
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
@@ -16,7 +15,6 @@ import com.linkdeck.core.network.HostBridge
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
-
 @Serializable
 data class StatusInfo(
     val battery: Int,
@@ -27,22 +25,16 @@ data class StatusInfo(
     val volume: Int,
     val brightness: Int,
 )
-
 @Serializable
 data class SimpleItem(val id: String, val title: String, val subtitle: String)
-
-/** HOST-side command executor. Impossible-on-stock actions return a clear error. */
 object HostCommands {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-
     fun execute(context: Context, payload: String): String {
         val req = runCatching { json.decodeFromString(CmdReq.serializer(), payload) }.getOrNull()
             ?: return res(CmdRes(false, error = "bad_request"))
         return res(runCmd(context, req.cmd, req.argsJson))
     }
-
     private fun res(r: CmdRes) = json.encodeToString(CmdRes.serializer(), r)
-
     private fun runCmd(context: Context, cmd: String, args: String): CmdRes {
         return when (cmd) {
             "get_status" -> getStatus(context)
@@ -120,23 +112,20 @@ object HostCommands {
                 com.linkdeck.app.mirror.ScreenCaptureService.stop(context)
                 CmdRes(true)
             }
+            "get_log" -> CmdRes(true, com.linkdeck.core.network.DebugLog.dump())
             else -> CmdRes(false, error = "unknown_cmd")
         }
     }
-
     @Serializable
     private data class NotifLite(val key: String, val packageName: String, val title: String, val text: String, val whenMs: Long, val canReply: Boolean)
-
     private fun com.linkdeck.core.network.NotifPush.toLite() =
         NotifLite(key, packageName, title, text, whenMs, canReply)
-
     private fun arg(args: String, key: String): String = runCatching {
         val el = json.parseToJsonElement(args)
         if (el is kotlinx.serialization.json.JsonObject) {
             el[key]?.let { v -> if (v is kotlinx.serialization.json.JsonPrimitive) v.content else "" } ?: ""
         } else ""
     }.getOrDefault("")
-
     private fun getStatus(context: Context): CmdRes {
         val intent = context.registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val level = intent?.getIntExtra("level", -1) ?: -1
@@ -169,7 +158,6 @@ object HostCommands {
             ),
         )
     }
-
     private fun smsList(context: Context): CmdRes = runCatching {
         val items = mutableListOf<SimpleItem>()
         context.contentResolver.query(
@@ -183,7 +171,6 @@ object HostCommands {
         }
         CmdRes(true, json.encodeToString(ListSerializer(SimpleItem.serializer()), items))
     }.getOrElse { CmdRes(false, error = it.message ?: "sms_denied") }
-
     private fun smsSend(context: Context, to: String, body: String): CmdRes = runCatching {
         val sm = if (Build.VERSION.SDK_INT >= 31) {
             context.getSystemService(SmsManager::class.java)
@@ -193,7 +180,6 @@ object HostCommands {
         sm?.sendTextMessage(to, null, body, null, null)
         CmdRes(true)
     }.getOrElse { CmdRes(false, error = it.message ?: "sms_failed") }
-
     private fun contactsList(context: Context): CmdRes = runCatching {
         val items = mutableListOf<SimpleItem>()
         context.contentResolver.query(
@@ -207,7 +193,6 @@ object HostCommands {
         }
         CmdRes(true, json.encodeToString(ListSerializer(SimpleItem.serializer()), items))
     }.getOrElse { CmdRes(false, error = it.message ?: "contacts_denied") }
-
     private fun appsList(context: Context): CmdRes = runCatching {
         val pm = context.packageManager
         val items = pm.getInstalledApplications(0)
@@ -216,7 +201,6 @@ object HostCommands {
             .sortedBy { it.title.lowercase() }
         CmdRes(true, json.encodeToString(ListSerializer(SimpleItem.serializer()), items))
     }.getOrElse { CmdRes(false, error = it.message ?: "apps_failed") }
-
     private fun launchApp(context: Context, pkg: String): CmdRes {
         return runCatching {
             val intent = context.packageManager.getLaunchIntentForPackage(pkg)
@@ -245,19 +229,16 @@ object HostCommands {
             CmdRes(true)
         }.getOrElse { CmdRes(false, error = it.message ?: "launch_failed") }
     }
-
     private fun answerCall(context: Context): CmdRes = runCatching {
         val tm = context.getSystemService(TelecomManager::class.java)
         tm?.acceptRingingCall()
         CmdRes(true)
     }.getOrElse { CmdRes(false, error = it.message ?: "answer_failed") }
-
     private fun endCall(context: Context): CmdRes = runCatching {
         val tm = context.getSystemService(TelecomManager::class.java)
         tm?.endCall()
         CmdRes(true)
     }.getOrElse { CmdRes(false, error = "end_call_needs_default_dialer") }
-
     private fun injectKey(context: Context, key: String): CmdRes {
         val action = when (key) {
             "back" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK
@@ -269,7 +250,6 @@ object HostCommands {
             ?: return CmdRes(false, error = "accessibility_off")
         return CmdRes(svc.performGlobalAction(action))
     }
-
     private fun injectTap(context: Context, x: Float, y: Float): CmdRes {
         val svc = HostBridge.accessibilityService as? android.accessibilityservice.AccessibilityService
             ?: return CmdRes(false, error = "accessibility_off")
@@ -279,13 +259,11 @@ object HostCommands {
             .build()
         return CmdRes(svc.dispatchGesture(gesture, null, null))
     }
-
     private fun wake(context: Context): CmdRes = runCatching {
         val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
         if (pm.isInteractive) return CmdRes(true)
         CmdRes(false, error = "wake_needs_pro_or_proximity")
     }.getOrElse { CmdRes(false, error = it.message ?: "wake_failed") }
-
     private fun lock(context: Context): CmdRes = runCatching {
         val dm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
         if (dm.isAdminActive(android.content.ComponentName(context, DeviceAdminStub::class.java))) {
@@ -295,11 +273,8 @@ object HostCommands {
             CmdRes(false, error = "lock_needs_device_admin")
         }
     }.getOrElse { CmdRes(false, error = it.message ?: "lock_failed") }
-
     class DeviceAdminStub : android.app.admin.DeviceAdminReceiver()
 }
-
-/** Holder so HostCommands can reach a clipboard monitor without Hilt. */
 object HostClipboardHolder {
     @Volatile private var monitor: HostClipboardMonitor? = null
     fun set(context: Context, text: String) {

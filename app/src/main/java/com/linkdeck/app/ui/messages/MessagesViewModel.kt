@@ -1,5 +1,4 @@
 package com.linkdeck.app.ui.messages
-
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.linkdeck.core.network.CmdReq
@@ -12,36 +11,25 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
-
 @Serializable
 data class SmsItem(val id: String, val address: String, val body: String)
-
 @Serializable
 data class ContactItem(val id: String, val name: String, val phone: String)
-
-/** The host answers with its generic {id, title, subtitle} wire shape. */
 @Serializable
 private data class WireItem(val id: String, val title: String, val subtitle: String)
-
 @HiltViewModel
 class MessagesViewModel @Inject constructor(
     private val connectionManager: ConnectionManager,
 ) : ViewModel() {
-
     private val _sms = MutableStateFlow<List<SmsItem>>(emptyList())
     val sms: StateFlow<List<SmsItem>> = _sms
-
     private val _contacts = MutableStateFlow<List<ContactItem>>(emptyList())
     val contacts: StateFlow<List<ContactItem>> = _contacts
-
     private val _sending = MutableStateFlow(false)
     val sending: StateFlow<Boolean> = _sending
-
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
-
     init { refresh() }
-
     fun refresh() {
         viewModelScope.launch {
             connectionManager.request("cmd", ProtoJson.encodeToString(CmdReq.serializer(), CmdReq("sms_list")))
@@ -61,7 +49,6 @@ class MessagesViewModel @Inject constructor(
                 }
         }
     }
-
     fun send(to: String, body: String) {
         _sending.value = true
         viewModelScope.launch {

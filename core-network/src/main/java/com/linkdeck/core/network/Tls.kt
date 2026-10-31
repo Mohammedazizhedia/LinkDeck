@@ -28,7 +28,11 @@ class TlsIdentity(
         suspend fun loadOrCreate(context: Context): TlsIdentity = withContext(Dispatchers.IO) {
             val dir = File(context.filesDir, "tls").apply { mkdirs() }
             val ksFile = File(dir, "linkdeck.jks")
-            val storePass = "linkdeck-selfsigned"
+            val tlsPrefs = context.getSharedPreferences("linkdeck_tls", android.content.Context.MODE_PRIVATE)
+            val storePass = tlsPrefs.getString("pass", null)
+                ?: java.util.UUID.randomUUID().toString().also {
+                    tlsPrefs.edit().putString("pass", it).apply()
+                }
             if (ksFile.exists()) {
                 val ks = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
                     ksFile.inputStream().use { load(it, storePass.toCharArray()) }

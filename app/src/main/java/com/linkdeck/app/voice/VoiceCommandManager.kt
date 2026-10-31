@@ -1,5 +1,4 @@
 package com.linkdeck.app.voice
-
 import android.app.DownloadManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -22,8 +21,6 @@ import org.vosk.Model
 import org.vosk.Recognizer
 import org.vosk.android.RecognitionListener
 import org.vosk.android.SpeechService
-
-/** Offline voice commands (AR/EN) with Vosk — no Google services. */
 @Singleton
 class VoiceCommandManager @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -35,24 +32,18 @@ class VoiceCommandManager @Inject constructor(
         data object Listening : VoiceState
         data class Error(val message: String) : VoiceState
     }
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val _state = MutableStateFlow<VoiceState>(VoiceState.Idle)
     val state: StateFlow<VoiceState> = _state
-
-    private var speechService: org.vosk.android.SpeechService? = null
+    private var speechService: SpeechService? = null
     private var model: Model? = null
-
     companion object {
         private const val AR_MODEL = "https://alphacephei.com/vosk/models/vosk-model-small-ar-0.22.zip"
         private const val EN_MODEL = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
     }
-
     private fun modelDir(lang: String): File = File(context.filesDir, "vosk/$lang")
-
     fun isReady(lang: String): Boolean = modelDir(lang).exists() &&
         (modelDir(lang).listFiles()?.isNotEmpty() == true)
-
     fun ensureModelAndStart(lang: String, onCommand: (String) -> Unit) {
         if (speechService != null) { stop(); return }
         if (isReady(lang)) { startListening(lang, onCommand); return }
@@ -80,7 +71,6 @@ class VoiceCommandManager @Inject constructor(
         }
         runCatching { context.registerReceiver(receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)) }
     }
-
     private fun unzip(zip: File, target: File) {
         if (!zip.exists()) error("download_missing")
         target.mkdirs()
@@ -100,7 +90,6 @@ class VoiceCommandManager @Inject constructor(
         }
         zip.delete()
     }
-
     private fun startListening(lang: String, onCommand: (String) -> Unit) {
         scope.launch {
             runCatching { withContext(Dispatchers.IO) { Model(modelDir(lang).path) } }
@@ -128,8 +117,6 @@ class VoiceCommandManager @Inject constructor(
                 .onFailure { _state.value = VoiceState.Error(it.message ?: "model_load_failed") }
         }
     }
-
-    /** Arabic + English command table. */
     fun mapCommand(text: String): String? = when {
         text.contains("الملفات") || text.contains("files", ignoreCase = true) -> "files"
         text.contains("الشاشة") || text.contains("mirror", ignoreCase = true) -> "mirror"
@@ -137,14 +124,12 @@ class VoiceCommandManager @Inject constructor(
         text.contains("الأجهزة") || text.contains("devices", ignoreCase = true) -> "devices"
         else -> null
     }
-
     fun stop() {
         runCatching { speechService?.stop() }
         runCatching { speechService?.shutdown() }
         speechService = null
         _state.value = VoiceState.Idle
     }
-
     private fun String.extractText(): String? = runCatching {
         org.json.JSONObject(this).getString("text")
     }.getOrNull()?.takeIf { it.isNotBlank() }

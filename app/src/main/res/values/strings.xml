@@ -198,4 +198,12 @@
     <string name="font_madika">Madika Arabic</string>
     <string name="font_basseet">Basseet</string>
     <string name="font_camel">The Year of the Camel</string>
+    <string name="crash_share">Share</string>
+    <string name="crash_hide">Never show</string>
+    <string name="p2p_host_start">Wi-Fi Direct (no network needed)</string>
+    <string name="p2p_code_is">Code: %1$s</string>
+    <string name="p2p_connect">Wi-Fi Direct pairing</string>
+    <string name="p2p_hint">Enable Wi-Fi Direct on the phone, then tap its name here.</string>
+    <string name="p2p_empty">No nearby devices found.</string>
+    <string name="p2p_enter_code">6-digit code shown on the phone</string>
 </resources>

@@ -1,5 +1,4 @@
 package com.linkdeck.app.ui.notifications
-
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.linkdeck.core.network.CmdReq
@@ -15,19 +14,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.builtins.ListSerializer
-
-/** Controller-side mirror: live list of host notifications with reply/dismiss. */
 @HiltViewModel
 class NotificationsViewModel @Inject constructor(
     private val connectionManager: ConnectionManager,
 ) : ViewModel() {
-
     private val _items = MutableStateFlow<List<NotifPush>>(emptyList())
     val items: StateFlow<List<NotifPush>> = _items
-
     private val _hostClip = MutableStateFlow("")
     val hostClip: StateFlow<String> = _hostClip
-
     init {
         viewModelScope.launch {
             connectionManager.request(
@@ -56,14 +50,12 @@ class NotificationsViewModel @Inject constructor(
             }
         }
     }
-
     fun dismiss(key: String) = viewModelScope.launch {
         connectionManager.send(
             "cmd",
             ProtoJson.encodeToString(CmdReq.serializer(), CmdReq("notif_dismiss", """{"key":"$key"}""")),
         )
     }
-
     fun reply(key: String, text: String) = viewModelScope.launch {
         val str = kotlinx.serialization.serializer<String>()
         connectionManager.send(
@@ -74,7 +66,6 @@ class NotificationsViewModel @Inject constructor(
             ),
         )
     }
-
     fun sendClipboardToHost(text: String) = viewModelScope.launch {
         val str = kotlinx.serialization.serializer<String>()
         connectionManager.send(

@@ -198,4 +198,12 @@
     <string name="font_madika">ماديكا</string>
     <string name="font_basseet">بسيط</string>
     <string name="font_camel">سنة الجمل</string>
+    <string name="crash_share">مشاركة</string>
+    <string name="crash_hide">لا تعرض مرة أخرى</string>
+    <string name="p2p_host_start">واي فاي دايركت (بدون شبكة)</string>
+    <string name="p2p_code_is">الكود: %1$s</string>
+    <string name="p2p_connect">اقتران Wi-Fi Direct</string>
+    <string name="p2p_hint">فعّل Wi-Fi Direct على الهاتف ثم اضغط على اسمه هنا.</string>
+    <string name="p2p_empty">لا توجد أجهزة قريبة.</string>
+    <string name="p2p_enter_code">الكود الستة أرقام الظاهر على الهاتف</string>
 </resources>

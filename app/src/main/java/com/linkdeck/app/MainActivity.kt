@@ -1,5 +1,4 @@
 package com.linkdeck.app
-
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,7 +16,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -36,7 +37,6 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
-
 @HiltViewModel
 class MainViewModel @Inject constructor(val settings: SettingsStore) : ViewModel() {
     val themeMode: StateFlow<ThemeMode> = settings.themeMode.stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.SYSTEM)
@@ -48,10 +48,8 @@ class MainViewModel @Inject constructor(val settings: SettingsStore) : ViewModel
     val cornerScale: StateFlow<Float> = settings.cornerScale.stateIn(viewModelScope, SharingStarted.Eagerly, 1f)
     val iconStroke: StateFlow<IconStroke> = settings.iconStroke.stateIn(viewModelScope, SharingStarted.Eagerly, IconStroke.REGULAR)
 }
-
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -64,14 +62,11 @@ class MainActivity : ComponentActivity() {
             val fontWeight by vm.fontWeight.collectAsState()
             val cornerScale by vm.cornerScale.collectAsState()
             val iconStroke by vm.iconStroke.collectAsState()
-
             val context = LocalContext.current
             val family = loadAppFontFamily(context, font, fontWeight)
-
             val language by vm.language.collectAsState()
             LanguageRestartEffect(language)
             CrashDialogEffect()
-
             LinkDeckTheme(
                 mode = themeMode,
                 accent = accent,
@@ -89,8 +84,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
-
-/** Shows the last crash (if any) once, then clears it. */
 @Composable
 private fun CrashDialogEffect() {
     val context = LocalContext.current
@@ -102,19 +95,51 @@ private fun CrashDialogEffect() {
             LinkDeckApp.clearCrashLog(context)
         }
     }
-    crash?.let { log ->
-        AlertDialog(
-            onDismissRequest = { crash = null },
-            title = { Text("Crash report") },
-            text = { Text(log.take(3000)) },
-            confirmButton = {
-                TextButton(onClick = { crash = null }) { Text("OK") }
-            },
-        )
+    crash?.let { raw ->
+        val prefs = remember {
+            context.getSharedPreferences("linkdeck_privacy", android.content.Context.MODE_PRIVATE)
+        }
+        if (prefs.getBoolean("crash_reports", true)) {
+            val log = raw
+                .replace(context.filesDir.absolutePath, "<app>")
+                .replace(context.cacheDir.absolutePath, "<cache>")
+            val clipboard = LocalClipboardManager.current
+            AlertDialog(
+                onDismissRequest = { crash = null },
+                title = { Text("Crash report") },
+                text = {
+                    Column {
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            Text(log.take(3000), style = MaterialTheme.typography.bodySmall)
+                        }
+                        TextButton(onClick = { clipboard.setText(AnnotatedString(log.take(5000))) }) {
+                            Text(stringResource(com.linkdeck.app.R.string.copy_error))
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { crash = null }) { Text("OK") }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(onClick = {
+                            val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(android.content.Intent.EXTRA_SUBJECT, "LinkDeck crash")
+                                putExtra(android.content.Intent.EXTRA_TEXT, log)
+                            }
+                            runCatching { context.startActivity(android.content.Intent.createChooser(send, null)) }
+                        }) { Text(stringResource(com.linkdeck.app.R.string.crash_share)) }
+                        TextButton(onClick = {
+                            prefs.edit().putBoolean("crash_reports", false).apply()
+                            crash = null
+                        }) { Text(stringResource(com.linkdeck.app.R.string.crash_hide)) }
+                    }
+                },
+            )
+        }
     }
 }
-
-/** Recreates the activity when a non-auto language is chosen or switches back. */
 @Composable
 private fun LanguageRestartEffect(language: AppLanguage) {
     val activity = LocalContext.current as? MainActivity ?: return

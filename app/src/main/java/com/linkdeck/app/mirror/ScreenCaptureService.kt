@@ -1,5 +1,4 @@
 package com.linkdeck.app.mirror
-
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -27,7 +26,6 @@ import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
-
 class ScreenCaptureService : Service() {
     companion object {
         const val CHANNEL_ID = "linkdeck_mirror"
@@ -38,22 +36,18 @@ class ScreenCaptureService : Service() {
         const val EXTRA_RESULT_DATA = "resultData"
         @Volatile var running = false
         private var instance: ScreenCaptureService? = null
-
         fun stop(context: Context) {
             instance?.let {
                 context.startService(Intent(context, ScreenCaptureService::class.java).setAction(ACTION_STOP))
             }
         }
     }
-
     private var projection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
     private val handler = Handler(Looper.getMainLooper())
     private var frameJob: ScheduledFuture<*>? = null
-
     override fun onBind(intent: Intent?): IBinder? = null
-
     override fun onCreate() {
         super.onCreate()
         val nm = getSystemService(NotificationManager::class.java)
@@ -75,7 +69,6 @@ class ScreenCaptureService : Service() {
             .build()
         startForeground(NOTIFICATION_ID, notif)
     }
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> { stopCapture(); stopSelf(); return START_NOT_STICKY }
@@ -92,7 +85,6 @@ class ScreenCaptureService : Service() {
         }
         return START_STICKY
     }
-
     private fun startCapture(resultCode: Int, data: Intent) {
         val pm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         projection = runCatching { pm.getMediaProjection(resultCode, data) }.getOrNull()
@@ -115,7 +107,6 @@ class ScreenCaptureService : Service() {
         instance = this
         HostBridge.hostServer?.broadcast("mirror_event", """{"kind":"started"}""")
     }
-
     private fun grabFrame() {
         val reader = imageReader ?: return
         val image = reader.acquireLatestImage() ?: return
@@ -142,7 +133,6 @@ class ScreenCaptureService : Service() {
             image.close()
         }
     }
-
     private fun stopCapture() {
         frameJob?.cancel(true)
         frameJob = null
@@ -156,7 +146,6 @@ class ScreenCaptureService : Service() {
         instance = null
         HostBridge.hostServer?.broadcast("mirror_event", """{"kind":"stopped"}""")
     }
-
     override fun onDestroy() {
         stopCapture()
         super.onDestroy()
