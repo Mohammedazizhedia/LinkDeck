@@ -1,0 +1,16 @@
+name: Wipe (optional cleanup)
+on:
+  workflow_dispatch:
+jobs:
+  wipe:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Delete app sources (keep .github workflows)
+        run: |
+          find . -path ./.git -prune -o -path ./.github -prune -o -type f -print -delete
+          git add -A
+          git commit -m "Wipe" || echo "nothing"
+          git push

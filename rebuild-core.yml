@@ -1,0 +1,1526 @@
+name: Rebuild Core
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write files
+        run: |
+          mkdir -p core-network/src/main/java/com/linkdeck/core/network
+          cat > core-network/src/main/java/com/linkdeck/core/network/P2pMessages.kt <<'KOTLIN_EOF'
+          package com.linkdeck.core.network
+          import kotlinx.serialization.Serializable
+          @Serializable
+          data class P2pPair(val type: String = "p2p_pair", val code: String)
+          @Serializable
+          data class P2pAuthOk(
+              val deviceId: String,
+              val deviceToken: String,
+              val fingerprint: String,
+          )
+          const val P2P_PORT = 28765
+          KOTLIN_EOF
+          mkdir -p app/src/main/java/com/linkdeck/app/pairing
+          cat > app/src/main/java/com/linkdeck/app/pairing/P2pManager.kt <<'KOTLIN_EOF'
+          package com.linkdeck.app.pairing
+          import android.annotation.SuppressLint
+          import android.content.BroadcastReceiver
+          import android.content.Context
+          import android.content.Intent
+          import android.content.IntentFilter
+          import android.net.wifi.p2p.WifiP2pConfig
+          import android.net.wifi.p2p.WifiP2pDevice
+          import android.net.wifi.p2p.WifiP2pInfo
+          import android.net.wifi.p2p.WifiP2pManager
+          import android.os.Looper
+          import kotlinx.coroutines.flow.MutableStateFlow
+          import kotlinx.coroutines.flow.StateFlow
+          class P2pManager(private val context: Context) {
+              private val manager = context.getSystemService(Context.WIFI_P2P_SERVICE) as WifiP2pManager
+              private val channel = manager.initialize(context, Looper.getMainLooper(), null)
+              private val _devices = MutableStateFlow<List<WifiP2pDevice>>(emptyList())
+              val devices: StateFlow<List<WifiP2pDevice>> = _devices
+              private val _connectionInfo = MutableStateFlow<WifiP2pInfo?>(null)
+              val connectionInfo: StateFlow<WifiP2pInfo?> = _connectionInfo
+              private var receiver: BroadcastReceiver? = null
+              @SuppressLint("MissingPermission")
+              fun startDiscovery() {
+                  stopDiscovery()
+                  val filter = IntentFilter().apply {
+                      addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION)
+                      addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION)
+                  }
+                  receiver = object : BroadcastReceiver() {
+                      override fun onReceive(c: Context, intent: Intent) {
+                          when (intent.action) {
+                              WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION ->
+                                  manager.requestPeers(channel) { peers ->
+                                      _devices.value = peers.deviceList.toList()
+                                  }
+                              WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION ->
+                                  manager.requestConnectionInfo(channel) { info ->
+                                      _connectionInfo.value = info
+                                  }
+                          }
+                      }
+                  }
+                  runCatching { context.registerReceiver(receiver, filter) }
+                  manager.discoverPeers(channel, silentListener())
+              }
+              fun stopDiscovery() {
+                  receiver?.let { runCatching { context.unregisterReceiver(it) } }
+                  receiver = null
+              }
+              @SuppressLint("MissingPermission")
+              fun connect(device: WifiP2pDevice) {
+                  val config = WifiP2pConfig().apply { deviceAddress = device.deviceAddress }
+                  manager.connect(channel, config, silentListener())
+              }
+              @SuppressLint("MissingPermission")
+              fun createGroup() {
+                  manager.createGroup(channel, silentListener())
+              }
+              private fun silentListener() = object : WifiP2pManager.ActionListener {
+                  override fun onSuccess() {}
+                  override fun onFailure(reason: Int) {}
+              }
+          }
+          KOTLIN_EOF
+          mkdir -p app/src/main/java/com/linkdeck/app/security
+          cat > app/src/main/java/com/linkdeck/app/security/SecurityCheck.kt <<'KOTLIN_EOF'
+          package com.linkdeck.app.security
+          object SecurityCheck {
+              fun isDeviceRooted(): Boolean {
+                  val paths = arrayOf(
+                      "/system/bin/su", "/system/xbin/su", "/sbin/su",
+                      "/system/app/Superuser.apk", "/magisk/.core/bin/su",
+                  )
+                  if (paths.any { java.io.File(it).exists() }) return true
+                  return runCatching {
+                      val p = Runtime.getRuntime().exec(arrayOf("/system/xbin/which", "su"))
+                      val found = p.inputStream.bufferedReader().readLine() != null
+                      p.destroy()
+                      found
+                  }.getOrDefault(false)
+              }
+              fun isTestBuild(): Boolean =
+                  android.os.Build.TAGS?.contains("test-keys") == true
+          }
+          KOTLIN_EOF
+          mkdir -p app/src/main/java/com/linkdeck/app/pairing
+          cat > app/src/main/java/com/linkdeck/app/pairing/PairingManager.kt <<'KOTLIN_EOF'
+          package com.linkdeck.app.pairing
+          import android.content.Context
+          import android.net.nsd.NsdManager
+          import android.net.wifi.WifiManager
+          import com.linkdeck.app.devices.TrustedDeviceStore
+          import com.linkdeck.core.network.AuthMessage
+          import com.linkdeck.core.network.AuthOk
+          import com.linkdeck.core.network.ConnectionManager
+          import com.linkdeck.core.network.DiscoveredDevice
+          import com.linkdeck.core.network.HostServer
+          import com.linkdeck.core.network.NsdDiscovery
+          import com.linkdeck.core.network.NsdRegistration
+          import com.linkdeck.core.network.PairingPayload
+          import com.linkdeck.core.network.P2pAuthOk
+          import com.linkdeck.core.network.P2pPair
+          import com.linkdeck.core.network.PinnedTrustManager
+          import com.linkdeck.core.network.TlsIdentity
+          import com.linkdeck.core.network.TrustedDevice
+          import dagger.hilt.android.qualifiers.ApplicationContext
+          import io.ktor.client.HttpClient
+          import io.ktor.client.engine.okhttp.OkHttp
+          import io.ktor.client.plugins.websocket.WebSockets
+          import io.ktor.client.plugins.websocket.webSocket
+          import io.ktor.websocket.Frame
+          import io.ktor.websocket.readText
+          import java.net.Inet4Address
+          import java.net.NetworkInterface
+          import javax.inject.Inject
+          import javax.inject.Singleton
+          import javax.net.ssl.SSLContext
+          import kotlinx.coroutines.CoroutineScope
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.delay
+          import kotlinx.coroutines.flow.MutableStateFlow
+          import kotlinx.coroutines.flow.StateFlow
+          import kotlinx.coroutines.isActive
+          import kotlinx.coroutines.launch
+          import kotlinx.coroutines.withContext
+          import kotlinx.serialization.json.Json
+          data class HostQrState(
+              val payload: PairingPayload? = null,
+              val secondsLeft: Int = 0,
+          )
+          @Singleton
+          class PairingManager @Inject constructor(
+              @ApplicationContext private val context: Context,
+              private val tlsIdentity: TlsIdentity,
+              private val hostServer: HostServer,
+              private val nsdManager: NsdManager,
+              private val trustedStore: TrustedDeviceStore,
+              private val connectionManager: ConnectionManager,
+              private val scope: CoroutineScope,
+          ) {
+              private val registration = NsdRegistration(nsdManager)
+              private var qrJob: kotlinx.coroutines.Job? = null
+              private val _hostQr = MutableStateFlow(HostQrState())
+              val hostQr: StateFlow<HostQrState> = _hostQr
+              private val discovery = NsdDiscovery(nsdManager, scope)
+              val discovered: StateFlow<List<DiscoveredDevice>> = discovery.devices
+              fun hostStart() {
+                  if (!hostServer.isRunning) {
+                      hostServer.start()
+                  }
+                  if (_hostQr.value.payload == null) {
+                      rotateQrToken()
+                  }
+                  registration.register("LinkDeck-${android.os.Build.MODEL}", hostServer.boundPort)
+              }
+              fun refreshAdvertisedAddress() {
+                  val cur = _hostQr.value.payload ?: return
+                  val ip = localIpAddress() ?: "0.0.0.0"
+                  if (ip != cur.ip || hostServer.boundPort != cur.port) {
+                      rotateQrToken()
+                  }
+              }
+              fun hostStop() {
+                  qrJob?.cancel()
+                  qrJob = null
+                  registration.unregister()
+                  hostServer.stop()
+                  _hostQr.value = HostQrState()
+              }
+              fun rotateQrToken() {
+                  qrJob?.cancel()
+                  val token = hostServer.newPairingToken(validityMillis = 120_000L)
+                  val ip = localIpAddress() ?: "0.0.0.0"
+                  val port = hostServer.boundPort
+                  val payload = PairingPayload(
+                      name = deviceName(),
+                      model = android.os.Build.MODEL,
+                      ip = ip,
+                      port = port,
+                      fp = tlsIdentity.certificateFingerprint,
+                      token = token,
+                      exp = System.currentTimeMillis() + 120_000L,
+                  )
+                  _hostQr.value = HostQrState(payload = payload, secondsLeft = 120)
+                  qrJob = scope.launch {
+                      var left = 120
+                      while (isActive && left > 0) {
+                          delay(1_000)
+                          left--
+                          val cur = _hostQr.value.payload
+                          _hostQr.value = HostQrState(payload = cur, secondsLeft = left)
+                      }
+                  }
+              }
+              suspend fun pairWithPayload(payload: PairingPayload): Result<TrustedDevice> = withContext(Dispatchers.IO) {
+                  if (payload.isExpired()) return@withContext Result.failure(PairingException.TokenExpired)
+                  if (payload.port <= 0) return@withContext Result.failure(PairingException.InvalidPayload)
+                  runCatching {
+                      val trustManager = PinnedTrustManager(setOf(payload.fp))
+                      val sslContext = SSLContext.getInstance("TLS").apply {
+                          init(null, arrayOf(trustManager), null)
+                      }
+                      val client = HttpClient(OkHttp) {
+                          install(WebSockets)
+                          engine {
+                              config {
+                                  sslSocketFactory(sslContext.socketFactory, trustManager)
+                                  hostnameVerifier { _, _ -> true }
+                                  connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                                  readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                                  writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                              }
+                          }
+                      }
+                      try {
+                          var trusted: TrustedDevice? = null
+                          client.webSocket(urlString = "wss://${payload.ip}:${payload.port}/ws") {
+                              send(Frame.Text(Json.encodeToString(AuthMessage.serializer(), AuthMessage(token = payload.token))))
+                              val reply = incoming.receive() as? Frame.Text
+                                  ?: throw SecurityException("Host did not reply")
+                              val text = reply.readText()
+                              if (!text.contains("\"auth_ok\"")) throw SecurityException("Pairing rejected: $text")
+                              val ok = Json.decodeFromString(AuthOk.serializer(), text)
+                              trusted = TrustedDevice(
+                                  id = ok.deviceId,
+                                  name = payload.name,
+                                  model = payload.model,
+                                  ip = payload.ip,
+                                  port = payload.port,
+                                  fingerprint = payload.fp,
+                                  token = ok.deviceToken,
+                              )
+                          }
+                          val device = trusted ?: throw SecurityException("Handshake incomplete")
+                          trustedStore.upsert(device)
+                          connectionManager.connect(device)
+                          device
+                      } finally {
+                          client.close()
+                      }
+                  }.fold(
+                      onSuccess = {
+                          com.linkdeck.core.network.DebugLog.log("Pair", "pairing success: ${'$'}{it.name}")
+                          Result.success(it)
+                      },
+                      onFailure = {
+                          com.linkdeck.core.network.DebugLog.log("Pair", "pairing failed: ${'$'}{describe(it)}")
+                          Result.failure(PairingException.Detail(describe(it)))
+                      },
+                  )
+              }
+              fun hostStartP2p(): String {
+                  hostStart()
+                  return hostServer.newP2pCode()
+              }
+              suspend fun pairOverP2p(ip: String, port: Int, code: String): Result<TrustedDevice> = withContext(Dispatchers.IO) {
+                  runCatching {
+                      val trustAll = object : javax.net.ssl.X509TrustManager {
+                          override fun checkServerTrusted(chain: Array<out java.security.cert.X509Certificate>, authType: String) {}
+                          override fun checkClientTrusted(chain: Array<out java.security.cert.X509Certificate>, authType: String) {}
+                          override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = emptyArray()
+                      }
+                      val sslContext = SSLContext.getInstance("TLS").apply { init(null, arrayOf(trustAll), null) }
+                      val client = HttpClient(OkHttp) {
+                          install(WebSockets)
+                          engine {
+                              config {
+                                  sslSocketFactory(sslContext.socketFactory, trustAll)
+                                  hostnameVerifier { _, _ -> true }
+                                  connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                                  readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                                  writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                              }
+                          }
+                      }
+                      try {
+                          var trusted: TrustedDevice? = null
+                          client.webSocket(urlString = "wss://$ip:$port/ws") {
+                              send(Frame.Text(Json.encodeToString(P2pPair.serializer(), P2pPair(code = code))))
+                              val reply = incoming.receive() as? Frame.Text ?: throw SecurityException("no reply")
+                              val text = reply.readText()
+                              val env = runCatching { Json.decodeFromString(com.linkdeck.core.network.Envelope.serializer(), text) }.getOrNull()
+                                  ?: throw SecurityException("p2p rejected: $text")
+                              if (env.type != "p2p_auth_ok") throw SecurityException("p2p rejected: $text")
+                              val ok = Json.decodeFromString(P2pAuthOk.serializer(), env.payload)
+                              trusted = TrustedDevice(
+                                  id = ok.deviceId,
+                                  name = deviceName(),
+                                  model = "Wi-Fi Direct",
+                                  ip = ip,
+                                  port = port,
+                                  fingerprint = ok.fingerprint,
+                                  token = ok.deviceToken,
+                              )
+                          }
+                          val device = trusted ?: throw SecurityException("p2p handshake incomplete")
+                          trustedStore.upsert(device)
+                          connectionManager.connect(device)
+                          device
+                      } finally {
+                          client.close()
+                      }
+                  }.fold(
+                      onSuccess = {
+                          com.linkdeck.core.network.DebugLog.log("Pair", "p2p pairing success")
+                          Result.success(it)
+                      },
+                      onFailure = {
+                          com.linkdeck.core.network.DebugLog.log("Pair", "p2p failed: ${describe(it)}")
+                          Result.failure(PairingException.Detail(describe(it)))
+                      },
+                  )
+              }
+              fun startDiscovery() = discovery.start()
+              fun stopDiscovery() = discovery.stop()
+              fun connectTo(device: TrustedDevice) = connectionManager.connect(device)
+              fun disconnect() = connectionManager.disconnect()
+              fun deviceName(): String = runCatching {
+                  val name = android.provider.Settings.Global.getString(context.contentResolver, "device_name")
+                  name?.takeIf { it.isNotBlank() }
+              }.getOrNull() ?: android.os.Build.MODEL
+              private fun localIpAddress(): String? = runCatching {
+                  NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }
+                      .filterIsInstance<Inet4Address>()
+                      .firstOrNull { it.isSiteLocalAddress && !it.isLoopbackAddress }
+                      ?.hostAddress
+              }.getOrNull() ?: runCatching {
+                  val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                  val ip = wm.connectionInfo.ipAddress
+                  if (ip != 0) "%d.%d.%d.%d".format(ip and 0xff, ip shr 8 and 0xff, ip shr 16 and 0xff, ip shr 24 and 0xff) else null
+              }.getOrNull()
+              private fun describe(e: Throwable): String {
+                  val sb = StringBuilder()
+                  var cur: Throwable? = e
+                  var depth = 0
+                  while (cur != null && depth < 5) {
+                      sb.append(cur.javaClass.simpleName).append(": ").append(cur.message).append("  <<  ")
+                      cur = cur.cause
+                      depth++
+                  }
+                  return sb.toString().ifEmpty { "unknown" }
+              }
+              sealed class PairingException(msg: String) : Exception(msg) {
+                  data object TokenExpired : PairingException("token expired")
+                  data object InvalidPayload : PairingException("invalid payload")
+                  data class Detail(val full: String) : PairingException(full)
+                  data class Network(val cause2: Throwable) : PairingException("network: ${cause2.message}")
+              }
+          }
+          KOTLIN_EOF
+          mkdir -p app/src/main/java/com/linkdeck/app
+          cat > app/src/main/java/com/linkdeck/app/MainActivity.kt <<'KOTLIN_EOF'
+          package com.linkdeck.app
+          import android.os.Bundle
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.setContent
+          import androidx.activity.enableEdgeToEdge
+          import androidx.compose.foundation.layout.fillMaxSize
+          import androidx.compose.material3.AlertDialog
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.Surface
+          import androidx.compose.material3.Text
+          import androidx.compose.material3.TextButton
+          import androidx.compose.runtime.Composable
+          import androidx.compose.runtime.collectAsState
+          import androidx.compose.runtime.getValue
+          import androidx.compose.runtime.mutableStateOf
+          import androidx.compose.runtime.remember
+          import androidx.compose.runtime.setValue
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.platform.LocalClipboardManager
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.text.AnnotatedString
+          import androidx.hilt.navigation.compose.hiltViewModel
+          import androidx.lifecycle.ViewModel
+          import androidx.lifecycle.viewModelScope
+          import androidx.navigation.compose.rememberNavController
+          import com.linkdeck.app.settings.SettingsStore
+          import com.linkdeck.core.design.AccentTheme
+          import com.linkdeck.core.design.ThemeMode
+          import com.linkdeck.core.design.AppFont
+          import com.linkdeck.core.design.IconStroke
+          import com.linkdeck.core.design.LinkDeckTheme
+          import com.linkdeck.core.design.loadAppFontFamily
+          import com.linkdeck.app.settings.AppLanguage
+          import dagger.hilt.android.AndroidEntryPoint
+          import dagger.hilt.android.lifecycle.HiltViewModel
+          import javax.inject.Inject
+          import kotlinx.coroutines.flow.SharingStarted
+          import kotlinx.coroutines.flow.StateFlow
+          import kotlinx.coroutines.flow.stateIn
+          @HiltViewModel
+          class MainViewModel @Inject constructor(val settings: SettingsStore) : ViewModel() {
+              val themeMode: StateFlow<ThemeMode> = settings.themeMode.stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.SYSTEM)
+              val accent: StateFlow<AccentTheme> = settings.accent.stateIn(viewModelScope, SharingStarted.Eagerly, AccentTheme.DEFAULT)
+              val language: StateFlow<AppLanguage> = settings.language.stateIn(viewModelScope, SharingStarted.Eagerly, AppLanguage.AUTO)
+              val fontFamily: StateFlow<AppFont> = settings.fontFamily.stateIn(viewModelScope, SharingStarted.Eagerly, AppFont.CAIRO)
+              val fontScale: StateFlow<Float> = settings.fontScale.stateIn(viewModelScope, SharingStarted.Eagerly, 1f)
+              val fontWeight: StateFlow<Int> = settings.fontWeight.stateIn(viewModelScope, SharingStarted.Eagerly, 500)
+              val cornerScale: StateFlow<Float> = settings.cornerScale.stateIn(viewModelScope, SharingStarted.Eagerly, 1f)
+              val iconStroke: StateFlow<IconStroke> = settings.iconStroke.stateIn(viewModelScope, SharingStarted.Eagerly, IconStroke.REGULAR)
+          }
+          @AndroidEntryPoint
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  enableEdgeToEdge()
+                  setContent {
+                      val vm: MainViewModel = hiltViewModel()
+                      val themeMode by vm.themeMode.collectAsState()
+                      val accent by vm.accent.collectAsState()
+                      val font by vm.fontFamily.collectAsState()
+                      val fontScale by vm.fontScale.collectAsState()
+                      val fontWeight by vm.fontWeight.collectAsState()
+                      val cornerScale by vm.cornerScale.collectAsState()
+                      val iconStroke by vm.iconStroke.collectAsState()
+                      val context = LocalContext.current
+                      val family = loadAppFontFamily(context, font, fontWeight)
+                      val language by vm.language.collectAsState()
+                      LanguageRestartEffect(language)
+                      CrashDialogEffect()
+                      LinkDeckTheme(
+                          mode = themeMode,
+                          accent = accent,
+                          fontFamily = family,
+                          fontScale = fontScale,
+                          fontWeight = fontWeight,
+                          cornerScale = cornerScale,
+                          iconStroke = iconStroke,
+                      ) {
+                          Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                              val navController = rememberNavController()
+                              AppNavHost(navController = navController)
+                          }
+                      }
+                  }
+              }
+          }
+          @Composable
+          private fun CrashDialogEffect() {
+              val context = LocalContext.current
+              var crash by remember { mutableStateOf<String?>(null) }
+              androidx.compose.runtime.LaunchedEffect(Unit) {
+                  val log = LinkDeckApp.readCrashLog(context)
+                  if (log != null) {
+                      crash = log
+                      LinkDeckApp.clearCrashLog(context)
+                  }
+              }
+              crash?.let { raw ->
+                  val prefs = remember {
+                      context.getSharedPreferences("linkdeck_privacy", android.content.Context.MODE_PRIVATE)
+                  }
+                  if (prefs.getBoolean("crash_reports", true)) {
+                      val log = raw
+                          .replace(context.filesDir.absolutePath, "<app>")
+                          .replace(context.cacheDir.absolutePath, "<cache>")
+                      val clipboard = LocalClipboardManager.current
+                      AlertDialog(
+                          onDismissRequest = { crash = null },
+                          title = { Text("Crash report") },
+                          text = {
+                              Column {
+                                  androidx.compose.foundation.text.selection.SelectionContainer {
+                                      Text(log.take(3000), style = MaterialTheme.typography.bodySmall)
+                                  }
+                                  TextButton(onClick = { clipboard.setText(AnnotatedString(log.take(5000))) }) {
+                                      Text(stringResource(com.linkdeck.app.R.string.copy_error))
+                                  }
+                              }
+                          },
+                          confirmButton = {
+                              TextButton(onClick = { crash = null }) { Text("OK") }
+                          },
+                          dismissButton = {
+                              Row {
+                                  TextButton(onClick = {
+                                      val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                          type = "text/plain"
+                                          putExtra(android.content.Intent.EXTRA_SUBJECT, "LinkDeck crash")
+                                          putExtra(android.content.Intent.EXTRA_TEXT, log)
+                                      }
+                                      runCatching { context.startActivity(android.content.Intent.createChooser(send, null)) }
+                                  }) { Text(stringResource(com.linkdeck.app.R.string.crash_share)) }
+                                  TextButton(onClick = {
+                                      prefs.edit().putBoolean("crash_reports", false).apply()
+                                      crash = null
+                                  }) { Text(stringResource(com.linkdeck.app.R.string.crash_hide)) }
+                              }
+                          },
+                      )
+                  }
+              }
+          }
+          @Composable
+          private fun LanguageRestartEffect(language: AppLanguage) {
+              val activity = LocalContext.current as? MainActivity ?: return
+              androidx.compose.runtime.LaunchedEffect(language) {
+                  if (language != AppLanguage.AUTO && activity.resources.configuration.locales[0]?.language != language.tag) {
+                      activity.recreate()
+                  } else if (language == AppLanguage.AUTO && activity.resources.configuration.locales[0]?.language == "ar"
+                      && !java.util.Locale.getDefault().language.startsWith("ar")) {
+                      activity.recreate()
+                  }
+              }
+          }
+          KOTLIN_EOF
+          mkdir -p app/src/main/java/com/linkdeck/app/host
+          cat > app/src/main/java/com/linkdeck/app/host/HostCommands.kt <<'KOTLIN_EOF'
+          package com.linkdeck.app.host
+          import android.content.Context
+          import android.content.Intent
+          import android.media.AudioManager
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Environment
+          import android.provider.Settings
+          import android.telecom.TelecomManager
+          import android.telephony.SmsManager
+          import com.linkdeck.app.service.LinkDeckNotificationListener
+          import com.linkdeck.core.network.CmdReq
+          import com.linkdeck.core.network.CmdRes
+          import com.linkdeck.core.network.HostBridge
+          import kotlinx.serialization.Serializable
+          import kotlinx.serialization.builtins.ListSerializer
+          import kotlinx.serialization.json.Json
+          @Serializable
+          data class StatusInfo(
+              val battery: Int,
+              val charging: Boolean,
+              val storageTotal: Long,
+              val storageFree: Long,
+              val wifiSsid: String,
+              val volume: Int,
+              val brightness: Int,
+          )
+          @Serializable
+          data class SimpleItem(val id: String, val title: String, val subtitle: String)
+          object HostCommands {
+              private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+              fun execute(context: Context, payload: String): String {
+                  val req = runCatching { json.decodeFromString(CmdReq.serializer(), payload) }.getOrNull()
+                      ?: return res(CmdRes(false, error = "bad_request"))
+                  return res(runCmd(context, req.cmd, req.argsJson))
+              }
+              private fun res(r: CmdRes) = json.encodeToString(CmdRes.serializer(), r)
+              private fun runCmd(context: Context, cmd: String, args: String): CmdRes {
+                  return when (cmd) {
+                      "get_status" -> getStatus(context)
+                      "set_clipboard" -> {
+                          HostClipboardHolder.set(context, arg(args, "text"))
+                          CmdRes(true)
+                      }
+                      "sms_list" -> smsList(context)
+                      "sms_send" -> smsSend(context, arg(args, "to"), arg(args, "body"))
+                      "contacts_list" -> contactsList(context)
+                      "apps_list" -> appsList(context)
+                      "launch_app" -> launchApp(context, arg(args, "package"))
+                      "dial" -> {
+                          runCatching {
+                              context.startActivity(
+                                  Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + arg(args, "number")))
+                                      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                              )
+                          }
+                          CmdRes(true)
+                      }
+                      "answer_call" -> answerCall(context)
+                      "end_call" -> endCall(context)
+                      "notif_dismiss" -> {
+                          (HostBridge.notificationListener as? LinkDeckNotificationListener)?.dismiss(arg(args, "key"))
+                          CmdRes(true)
+                      }
+                      "notif_reply" -> {
+                          val ok = (HostBridge.notificationListener as? LinkDeckNotificationListener)
+                              ?.reply(arg(args, "key"), arg(args, "text")) == true
+                          CmdRes(ok, error = if (ok) "" else "reply_unavailable")
+                      }
+                      "notif_snapshot" -> {
+                          val items = (HostBridge.notificationListener as? LinkDeckNotificationListener)?.snapshot().orEmpty()
+                          CmdRes(true, json.encodeToString(ListSerializer(NotifLite.serializer()), items.map { it.toLite() }))
+                      }
+                      "set_volume" -> {
+                          val level = arg(args, "level").toIntOrNull()
+                          if (level == null) {
+                              CmdRes(false, error = "bad_args")
+                          } else {
+                              val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                              am.setStreamVolume(
+                                  AudioManager.STREAM_MUSIC,
+                                  level.coerceIn(0, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)),
+                                  0,
+                              )
+                              CmdRes(true)
+                          }
+                      }
+                      "set_brightness" -> {
+                          val v = arg(args, "level").toIntOrNull()
+                          if (v == null) {
+                              CmdRes(false, error = "bad_args")
+                          } else if (!Settings.System.canWrite(context)) {
+                              CmdRes(false, error = "need_write_settings")
+                          } else {
+                              Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, v.coerceIn(0, 255))
+                              CmdRes(true)
+                          }
+                      }
+                      "wake" -> wake(context)
+                      "lock" -> lock(context)
+                      "inject_key" -> injectKey(context, arg(args, "key"))
+                      "inject_tap" -> injectTap(
+                          context,
+                          arg(args, "x").toFloatOrNull() ?: 0f,
+                          arg(args, "y").toFloatOrNull() ?: 0f,
+                      )
+                      "mirror_request" -> {
+                          com.linkdeck.app.mirror.MirrorConsentActivity.request(context)
+                          CmdRes(true)
+                      }
+                      "mirror_stop" -> {
+                          com.linkdeck.app.mirror.ScreenCaptureService.stop(context)
+                          CmdRes(true)
+                      }
+                      "get_log" -> CmdRes(true, com.linkdeck.core.network.DebugLog.dump())
+                      else -> CmdRes(false, error = "unknown_cmd")
+                  }
+              }
+              @Serializable
+              private data class NotifLite(val key: String, val packageName: String, val title: String, val text: String, val whenMs: Long, val canReply: Boolean)
+              private fun com.linkdeck.core.network.NotifPush.toLite() =
+                  NotifLite(key, packageName, title, text, whenMs, canReply)
+              private fun arg(args: String, key: String): String = runCatching {
+                  val el = json.parseToJsonElement(args)
+                  if (el is kotlinx.serialization.json.JsonObject) {
+                      el[key]?.let { v -> if (v is kotlinx.serialization.json.JsonPrimitive) v.content else "" } ?: ""
+                  } else ""
+              }.getOrDefault("")
+              private fun getStatus(context: Context): CmdRes {
+                  val intent = context.registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                  val level = intent?.getIntExtra("level", -1) ?: -1
+                  val status = intent?.getIntExtra("status", -1) ?: -1
+                  val storage = runCatching {
+                      val s = android.os.StatFs(Environment.getDataDirectory().path)
+                      s.totalBytes to s.availableBytes
+                  }.getOrDefault(0L to 0L)
+                  val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                  val brightness = runCatching {
+                      Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS)
+                  }.getOrDefault(-1)
+                  val wifi = runCatching {
+                      val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+                      wm.connectionInfo.ssid?.removePrefix("\"")?.removeSuffix("\"") ?: ""
+                  }.getOrDefault("")
+                  return CmdRes(
+                      true,
+                      json.encodeToString(
+                          StatusInfo.serializer(),
+                          StatusInfo(
+                              battery = level,
+                              charging = status == 2 || status == 5,
+                              storageTotal = storage.first,
+                              storageFree = storage.second,
+                              wifiSsid = wifi,
+                              volume = am.getStreamVolume(AudioManager.STREAM_MUSIC),
+                              brightness = brightness,
+                          ),
+                      ),
+                  )
+              }
+              private fun smsList(context: Context): CmdRes = runCatching {
+                  val items = mutableListOf<SimpleItem>()
+                  context.contentResolver.query(
+                      Uri.parse("content://sms/inbox"),
+                      arrayOf("_id", "address", "body", "date"),
+                      null, null, "date DESC LIMIT 100",
+                  )?.use { c ->
+                      while (c.moveToNext()) {
+                          items.add(SimpleItem(c.getString(0) ?: "", c.getString(1) ?: "", c.getString(2) ?: ""))
+                      }
+                  }
+                  CmdRes(true, json.encodeToString(ListSerializer(SimpleItem.serializer()), items))
+              }.getOrElse { CmdRes(false, error = it.message ?: "sms_denied") }
+              private fun smsSend(context: Context, to: String, body: String): CmdRes = runCatching {
+                  val sm = if (Build.VERSION.SDK_INT >= 31) {
+                      context.getSystemService(SmsManager::class.java)
+                  } else {
+                      @Suppress("DEPRECATION") SmsManager.getDefault()
+                  }
+                  sm?.sendTextMessage(to, null, body, null, null)
+                  CmdRes(true)
+              }.getOrElse { CmdRes(false, error = it.message ?: "sms_failed") }
+              private fun contactsList(context: Context): CmdRes = runCatching {
+                  val items = mutableListOf<SimpleItem>()
+                  context.contentResolver.query(
+                      Uri.parse("content://com.android.contacts/contacts"),
+                      arrayOf("_id", "display_name", "display_name"),
+                      null, null, "display_name ASC LIMIT 200",
+                  )?.use { c ->
+                      while (c.moveToNext()) {
+                          items.add(SimpleItem(c.getString(0) ?: "", c.getString(1) ?: "", c.getString(2) ?: ""))
+                      }
+                  }
+                  CmdRes(true, json.encodeToString(ListSerializer(SimpleItem.serializer()), items))
+              }.getOrElse { CmdRes(false, error = it.message ?: "contacts_denied") }
+              private fun appsList(context: Context): CmdRes = runCatching {
+                  val pm = context.packageManager
+                  val items = pm.getInstalledApplications(0)
+                      .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
+                      .map { SimpleItem(it.packageName, pm.getApplicationLabel(it).toString(), it.packageName) }
+                      .sortedBy { it.title.lowercase() }
+                  CmdRes(true, json.encodeToString(ListSerializer(SimpleItem.serializer()), items))
+              }.getOrElse { CmdRes(false, error = it.message ?: "apps_failed") }
+              private fun launchApp(context: Context, pkg: String): CmdRes {
+                  return runCatching {
+                      val intent = context.packageManager.getLaunchIntentForPackage(pkg)
+                          ?: error("no_launcher")
+                      try {
+                          intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                          context.startActivity(intent)
+                      } catch (se: SecurityException) {
+                          val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                          val pi = android.app.PendingIntent.getActivity(
+                              context, pkg.hashCode(), intent,
+                              android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+                          )
+                          val label = context.packageManager.getApplicationLabel(
+                              context.packageManager.getApplicationInfo(pkg, 0)
+                          ).toString()
+                          val notif = android.app.Notification.Builder(context, "linkdeck_service")
+                              .setSmallIcon(com.linkdeck.app.R.drawable.ic_stat_linkdeck)
+                              .setContentTitle(context.getString(com.linkdeck.app.R.string.launch_fallback_title))
+                              .setContentText(label)
+                              .setContentIntent(pi)
+                              .setAutoCancel(true)
+                              .build()
+                          nm.notify(pkg.hashCode(), notif)
+                      }
+                      CmdRes(true)
+                  }.getOrElse { CmdRes(false, error = it.message ?: "launch_failed") }
+              }
+              private fun answerCall(context: Context): CmdRes = runCatching {
+                  val tm = context.getSystemService(TelecomManager::class.java)
+                  tm?.acceptRingingCall()
+                  CmdRes(true)
+              }.getOrElse { CmdRes(false, error = it.message ?: "answer_failed") }
+              private fun endCall(context: Context): CmdRes = runCatching {
+                  val tm = context.getSystemService(TelecomManager::class.java)
+                  tm?.endCall()
+                  CmdRes(true)
+              }.getOrElse { CmdRes(false, error = "end_call_needs_default_dialer") }
+              private fun injectKey(context: Context, key: String): CmdRes {
+                  val action = when (key) {
+                      "back" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK
+                      "home" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME
+                      "recents" -> android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS
+                      else -> return CmdRes(false, error = "bad_key")
+                  }
+                  val svc = HostBridge.accessibilityService as? android.accessibilityservice.AccessibilityService
+                      ?: return CmdRes(false, error = "accessibility_off")
+                  return CmdRes(svc.performGlobalAction(action))
+              }
+              private fun injectTap(context: Context, x: Float, y: Float): CmdRes {
+                  val svc = HostBridge.accessibilityService as? android.accessibilityservice.AccessibilityService
+                      ?: return CmdRes(false, error = "accessibility_off")
+                  val path = android.graphics.Path().apply { moveTo(x, y) }
+                  val gesture = android.accessibilityservice.GestureDescription.Builder()
+                      .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 50))
+                      .build()
+                  return CmdRes(svc.dispatchGesture(gesture, null, null))
+              }
+              private fun wake(context: Context): CmdRes = runCatching {
+                  val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                  if (pm.isInteractive) return CmdRes(true)
+                  CmdRes(false, error = "wake_needs_pro_or_proximity")
+              }.getOrElse { CmdRes(false, error = it.message ?: "wake_failed") }
+              private fun lock(context: Context): CmdRes = runCatching {
+                  val dm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
+                  if (dm.isAdminActive(android.content.ComponentName(context, DeviceAdminStub::class.java))) {
+                      dm.lockNow()
+                      CmdRes(true)
+                  } else {
+                      CmdRes(false, error = "lock_needs_device_admin")
+                  }
+              }.getOrElse { CmdRes(false, error = it.message ?: "lock_failed") }
+              class DeviceAdminStub : android.app.admin.DeviceAdminReceiver()
+          }
+          object HostClipboardHolder {
+              @Volatile private var monitor: HostClipboardMonitor? = null
+              fun set(context: Context, text: String) {
+                  var m = monitor
+                  if (m == null) { m = HostClipboardMonitor(context.applicationContext); monitor = m }
+                  m.setText(text)
+              }
+          }
+          KOTLIN_EOF
+          mkdir -p app/src/main/java/com/linkdeck/app/host
+          cat > app/src/main/java/com/linkdeck/app/host/HostClipboardMonitor.kt <<'KOTLIN_EOF'
+          package com.linkdeck.app.host
+          import android.content.ClipData
+          import android.content.ClipboardManager
+          import android.content.Context
+          import com.linkdeck.core.network.ClipPush
+          import com.linkdeck.core.network.HostBridge
+          import com.linkdeck.core.network.ProtoJson
+          class HostClipboardMonitor(context: Context) {
+              private val appContext = context.applicationContext
+              private val cm = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+              private var last: String? = null
+              private val listener = ClipboardManager.OnPrimaryClipChangedListener {
+                  val text = cm.primaryClip
+                      ?.takeIf { it.itemCount > 0 }
+                      ?.getItemAt(0)
+                      ?.coerceToText(appContext)
+                      ?.toString()
+                  if (text != null && text != last) {
+                      last = text
+                      HostBridge.hostServer?.broadcast(
+                          "clip",
+                          ProtoJson.encodeToString(ClipPush.serializer(), ClipPush(text)),
+                      )
+                  }
+              }
+              fun start() { last = null; cm.addPrimaryClipChangedListener(listener) }
+              fun stop() { cm.removePrimaryClipChangedListener(listener) }
+              fun setText(text: String) {
+                  last = text
+                  cm.setPrimaryClip(ClipData.newPlainText("linkdeck", text))
+              }
+          }
+          KOTLIN_EOF
+          mkdir -p app/src/main/java/com/linkdeck/app/host
+          cat > app/src/main/java/com/linkdeck/app/host/HostHotspotManager.kt <<'KOTLIN_EOF'
+          package com.linkdeck.app.host
+          import android.content.Context
+          import android.net.wifi.WifiManager
+          import android.os.Build
+          import android.os.Handler
+          import android.os.Looper
+          class HostHotspotManager(private val context: Context) {
+              interface Callback {
+                  fun onStarted(info: String)
+                  fun onError(reason: String)
+              }
+              private var reservation: WifiManager.LocalOnlyHotspotReservation? = null
+              private var callback: Callback? = null
+              fun start(callback: Callback) {
+                  this.callback = callback
+                  val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                  runCatching {
+                      wm.startLocalOnlyHotspot(object : WifiManager.LocalOnlyHotspotCallback() {
+                          override fun onStarted(res: WifiManager.LocalOnlyHotspotReservation) {
+                              reservation = res
+                              val info = runCatching {
+                                  if (Build.VERSION.SDK_INT >= 30) {
+                                      val cfg = res.softApConfiguration
+                                      val ssid = cfg?.ssid?.toString().orEmpty()
+                                      val pass = cfg?.passphrase.orEmpty()
+                                      if (ssid.isNotBlank()) "Hotspot: $ssid  |  Password: $pass"
+                                      else "Hotspot started — see the system notification for its name and password."
+                                  } else {
+                                      "Hotspot started — see the system notification for its name and password."
+                                  }
+                              }.getOrDefault("Hotspot started.")
+                              callback.onStarted(info)
+                          }
+                          override fun onStopped() {
+                              reservation = null
+                          }
+                          override fun onFailed(reason: Int) {
+                              callback.onError("hotspot failed (code $reason)")
+                          }
+                      }, Handler(Looper.getMainLooper()))
+                  }.onFailure { callback.onError(it.message ?: "hotspot unsupported on this device") }
+              }
+              fun stop() {
+                  runCatching { reservation?.close() }
+                  reservation = null
+              }
+          }
+          KOTLIN_EOF
+          mkdir -p app/src/main/java/com/linkdeck/app/service
+          cat > app/src/main/java/com/linkdeck/app/service/LinkDeckNotificationListener.kt <<'KOTLIN_EOF'
+          package com.linkdeck.app.service
+          import android.app.Notification
+          import android.os.Bundle
+          import android.service.notification.NotificationListenerService
+          import android.service.notification.StatusBarNotification
+          import com.linkdeck.core.network.HostBridge
+          import com.linkdeck.core.network.NotifDismissPush
+          import com.linkdeck.core.network.NotifPush
+          import com.linkdeck.core.network.ProtoJson
+          class LinkDeckNotificationListener : NotificationListenerService() {
+              private val latest = LinkedHashMap<String, StatusBarNotification>()
+              override fun onListenerConnected() {
+                  HostBridge.notificationListener = this
+              }
+              override fun onListenerDisconnected() {
+                  if (HostBridge.notificationListener === this) HostBridge.notificationListener = null
+              }
+              override fun onNotificationPosted(sbn: StatusBarNotification) {
+                  if (sbn.isOngoing && sbn.notification.flags and Notification.FLAG_ONGOING_EVENT != 0) return
+                  if (sbn.packageName == "android") {
+                      val t = sbn.notification.extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+                      val m = Regex("\\b(\\d{6})\\b").find(t)
+                      if (m != null && t.contains("pair", ignoreCase = true)) {
+                          (HostBridge.proManager as? com.linkdeck.app.pro.ProModeManager)
+                              ?.onPairingCodeCaptured(m.groupValues[1])
+                      }
+                  }
+                  latest[sbn.key] = sbn
+                  trim()
+                  push(sbn)
+              }
+              override fun onNotificationRemoved(sbn: StatusBarNotification) {
+                  latest.remove(sbn.key)
+                  HostBridge.hostServer?.broadcast(
+                      "notif_removed",
+                      ProtoJson.encodeToString(NotifDismissPush.serializer(), NotifDismissPush(sbn.key)),
+                  )
+              }
+              fun dismiss(key: String) = runCatching { cancelNotification(key) }
+              fun reply(key: String, text: String): Boolean {
+                  val sbn = latest[key] ?: return false
+                  val act = sbn.notification.actions?.firstOrNull { it.remoteInputs != null } ?: return false
+                  return runCatching {
+                      val fillIn = android.content.Intent()
+                      val results = Bundle()
+                      act.remoteInputs!!.forEach { results.putCharSequence(it.resultKey, text) }
+                      fillIn.putExtra("android.remoteinput.results", results)
+                      act.actionIntent.send(this, 0, fillIn)
+                      true
+                  }.getOrDefault(false)
+              }
+              private fun push(sbn: StatusBarNotification) {
+                  val extras = sbn.notification.extras
+                  val push = NotifPush(
+                      key = sbn.key,
+                      packageName = sbn.packageName,
+                      title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: "",
+                      text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: "",
+                      whenMs = sbn.notification.`when`.takeIf { it > 0 } ?: sbn.postTime,
+                      canReply = sbn.notification.actions?.any { it.remoteInputs != null } == true,
+                  )
+                  HostBridge.hostServer?.broadcast("notif", ProtoJson.encodeToString(NotifPush.serializer(), push))
+              }
+              fun snapshot(): List<NotifPush> = latest.values.map { sbn ->
+                  val extras = sbn.notification.extras
+                  NotifPush(
+                      key = sbn.key,
+                      packageName = sbn.packageName,
+                      title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: "",
+                      text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: "",
+                      whenMs = sbn.notification.`when`.takeIf { it > 0 } ?: sbn.postTime,
+                      canReply = sbn.notification.actions?.any { it.remoteInputs != null } == true,
+                  )
+              }
+              private fun trim() { while (latest.size > 50) latest.remove(latest.keys.first()) }
+          }
+          KOTLIN_EOF
+          mkdir -p app/src/main/java/com/linkdeck/app/mirror
+          cat > app/src/main/java/com/linkdeck/app/mirror/ScreenCaptureService.kt <<'KOTLIN_EOF'
+          package com.linkdeck.app.mirror
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
+          import android.app.Service
+          import android.content.Context
+          import android.content.Intent
+          import android.graphics.Bitmap
+          import android.graphics.PixelFormat
+          import android.hardware.display.DisplayManager
+          import android.hardware.display.VirtualDisplay
+          import android.media.ImageReader
+          import android.media.projection.MediaProjection
+          import android.media.projection.MediaProjectionManager
+          import android.os.Handler
+          import android.os.IBinder
+          import android.os.Looper
+          import android.util.Base64
+          import androidx.core.app.NotificationCompat
+          import com.linkdeck.app.R
+          import com.linkdeck.core.network.FramePush
+          import com.linkdeck.core.network.HostBridge
+          import com.linkdeck.core.network.ProtoJson
+          import java.io.ByteArrayOutputStream
+          import java.util.concurrent.Executors
+          import java.util.concurrent.ScheduledFuture
+          import java.util.concurrent.TimeUnit
+          class ScreenCaptureService : Service() {
+              companion object {
+                  const val CHANNEL_ID = "linkdeck_mirror"
+                  const val NOTIFICATION_ID = 77
+                  const val ACTION_START = "com.linkdeck.app.mirror.START"
+                  const val ACTION_STOP = "com.linkdeck.app.mirror.STOP"
+                  const val EXTRA_RESULT_CODE = "resultCode"
+                  const val EXTRA_RESULT_DATA = "resultData"
+                  @Volatile var running = false
+                  private var instance: ScreenCaptureService? = null
+                  fun stop(context: Context) {
+                      instance?.let {
+                          context.startService(Intent(context, ScreenCaptureService::class.java).setAction(ACTION_STOP))
+                      }
+                  }
+              }
+              private var projection: MediaProjection? = null
+              private var virtualDisplay: VirtualDisplay? = null
+              private var imageReader: ImageReader? = null
+              private val handler = Handler(Looper.getMainLooper())
+              private var frameJob: ScheduledFuture<*>? = null
+              override fun onBind(intent: Intent?): IBinder? = null
+              override fun onCreate() {
+                  super.onCreate()
+                  val nm = getSystemService(NotificationManager::class.java)
+                  if (nm?.getNotificationChannel(CHANNEL_ID) == null) {
+                      nm?.createNotificationChannel(
+                          NotificationChannel(CHANNEL_ID, getString(R.string.mirror_channel), NotificationManager.IMPORTANCE_LOW)
+                      )
+                  }
+                  val stopPi = PendingIntent.getService(
+                      this, 1, Intent(this, ScreenCaptureService::class.java).setAction(ACTION_STOP),
+                      PendingIntent.FLAG_IMMUTABLE,
+                  )
+                  val notif = NotificationCompat.Builder(this, CHANNEL_ID)
+                      .setSmallIcon(R.drawable.ic_stat_linkdeck)
+                      .setContentTitle(getString(R.string.app_name))
+                      .setContentText(getString(R.string.mirror_running))
+                      .addAction(0, getString(R.string.mirror_stop), stopPi)
+                      .setOngoing(true)
+                      .build()
+                  startForeground(NOTIFICATION_ID, notif)
+              }
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  when (intent?.action) {
+                      ACTION_STOP -> { stopCapture(); stopSelf(); return START_NOT_STICKY }
+                      ACTION_START -> {
+                          val rc = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
+                          @Suppress("DEPRECATION")
+                          val data = intent.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
+                          if (rc != 0 && data != null) startCapture(rc, data)
+                          else {
+                              HostBridge.hostServer?.broadcast("mirror_event", """{"kind":"error","data":"projection_denied"}""")
+                              stopSelf()
+                          }
+                      }
+                  }
+                  return START_STICKY
+              }
+              private fun startCapture(resultCode: Int, data: Intent) {
+                  val pm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                  projection = runCatching { pm.getMediaProjection(resultCode, data) }.getOrNull()
+                  val mp = projection ?: run {
+                      HostBridge.hostServer?.broadcast("mirror_event", """{"kind":"error","data":"projection_failed"}""")
+                      return
+                  }
+                  val metrics = resources.displayMetrics
+                  val w = (metrics.widthPixels / 2).coerceAtLeast(320)
+                  val h = (metrics.heightPixels / 2).coerceAtLeast(480)
+                  imageReader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
+                  virtualDisplay = mp.createVirtualDisplay(
+                      "linkdeck", w, h, metrics.densityDpi,
+                      DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                      imageReader?.surface, null, handler,
+                  )
+                  val scheduler = Executors.newSingleThreadScheduledExecutor()
+                  frameJob = scheduler.scheduleWithFixedDelay(::grabFrame, 0, 200, TimeUnit.MILLISECONDS)
+                  running = true
+                  instance = this
+                  HostBridge.hostServer?.broadcast("mirror_event", """{"kind":"started"}""")
+              }
+              private fun grabFrame() {
+                  val reader = imageReader ?: return
+                  val image = reader.acquireLatestImage() ?: return
+                  try {
+                      val plane = image.planes[0]
+                      val pixelStride = plane.pixelStride
+                      val rowStride = plane.rowStride
+                      val rowPadding = rowStride - pixelStride * image.width
+                      val bmp = Bitmap.createBitmap(
+                          image.width + rowPadding / pixelStride, image.height, Bitmap.Config.ARGB_8888,
+                      )
+                      bmp.copyPixelsFromBuffer(plane.buffer)
+                      val cropped = Bitmap.createBitmap(bmp, 0, 0, image.width, image.height)
+                      bmp.recycle()
+                      val out = ByteArrayOutputStream()
+                      cropped.compress(Bitmap.CompressFormat.JPEG, 55, out)
+                      cropped.recycle()
+                      val push = FramePush(image.width, image.height, Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP))
+                      HostBridge.hostServer?.broadcast("frame", ProtoJson.encodeToString(FramePush.serializer(), push))
+                  } catch (se: SecurityException) {
+                      HostBridge.hostServer?.broadcast("mirror_event", """{"kind":"flag_secure"}""")
+                  } catch (_: Exception) {
+                  } finally {
+                      image.close()
+                  }
+              }
+              private fun stopCapture() {
+                  frameJob?.cancel(true)
+                  frameJob = null
+                  runCatching { virtualDisplay?.release() }
+                  runCatching { imageReader?.close() }
+                  runCatching { projection?.stop() }
+                  virtualDisplay = null
+                  imageReader = null
+                  projection = null
+                  running = false
+                  instance = null
+                  HostBridge.hostServer?.broadcast("mirror_event", """{"kind":"stopped"}""")
+              }
+              override fun onDestroy() {
+                  stopCapture()
+                  super.onDestroy()
+              }
+          }
+          KOTLIN_EOF
+          mkdir -p app/src/main/java/com/linkdeck/app/ui/pairing
+          cat > app/src/main/java/com/linkdeck/app/ui/pairing/QrAnalyzer.kt <<'KOTLIN_EOF'
+          package com.linkdeck.app.ui.pairing
+          import androidx.annotation.OptIn
+          import androidx.camera.core.ExperimentalGetImage
+          import androidx.camera.core.ImageAnalysis
+          import androidx.camera.core.ImageProxy
+          import com.google.zxing.BinaryBitmap
+          import com.google.zxing.DecodeHintType
+          import com.google.zxing.MultiFormatReader
+          import com.google.zxing.NotFoundException
+          import com.google.zxing.PlanarYUVLuminanceSource
+          import com.google.zxing.common.HybridBinarizer
+          class QrAnalyzer(private val onCode: (String) -> Unit) : ImageAnalysis.Analyzer {
+              private val reader = MultiFormatReader()
+              @OptIn(ExperimentalGetImage::class)
+              override fun analyze(imageProxy: ImageProxy) {
+                  val mediaImage = imageProxy.image ?: return imageProxy.close()
+                  val rotation = imageProxy.imageInfo.rotationDegrees
+                  try {
+                      val yBuffer = mediaImage.planes[0].buffer
+                      val yData = ByteArray(yBuffer.remaining())
+                      yBuffer.get(yData)
+                      val (data, width, height) = if (rotation == 90 || rotation == 270) {
+                          val (rotated, w, h) = rotate(yData, imageProxy.width, imageProxy.height)
+                          Triple(rotated, w, h)
+                      } else {
+                          Triple(yData, imageProxy.width, imageProxy.height)
+                      }
+                      val source = PlanarYUVLuminanceSource(
+                          data, width, height, 0, 0, width, height, false,
+                      )
+                      reader.setHints(mapOf(DecodeHintType.TRY_HARDER to true))
+                      val result = reader.decodeWithState(BinaryBitmap(HybridBinarizer(source)))
+                      onCode(result.text)
+                  } catch (_: NotFoundException) {
+                  } catch (_: Exception) {
+                  } finally {
+                      imageProxy.close()
+                  }
+              }
+              private fun rotate(data: ByteArray, width: Int, height: Int): Triple<ByteArray, Int, Int> {
+                  val rotated = ByteArray(data.size)
+                  for (y in 0 until height) {
+                      for (x in 0 until width) {
+                          rotated[x * height + (height - 1 - y)] = data[y * width + x]
+                      }
+                  }
+                  return Triple(rotated, height, width)
+              }
+          }
+          KOTLIN_EOF
+          mkdir -p app/src/main/java/com/linkdeck/app/voice
+          cat > app/src/main/java/com/linkdeck/app/voice/VoiceCommandManager.kt <<'KOTLIN_EOF'
+          package com.linkdeck.app.voice
+          import android.app.DownloadManager
+          import android.content.BroadcastReceiver
+          import android.content.Context
+          import android.content.Intent
+          import android.content.IntentFilter
+          import android.net.Uri
+          import dagger.hilt.android.qualifiers.ApplicationContext
+          import java.io.File
+          import java.util.zip.ZipInputStream
+          import javax.inject.Inject
+          import javax.inject.Singleton
+          import kotlinx.coroutines.CoroutineScope
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.SupervisorJob
+          import kotlinx.coroutines.flow.MutableStateFlow
+          import kotlinx.coroutines.flow.StateFlow
+          import kotlinx.coroutines.launch
+          import kotlinx.coroutines.withContext
+          import org.vosk.Model
+          import org.vosk.Recognizer
+          import org.vosk.android.RecognitionListener
+          import org.vosk.android.SpeechService
+          @Singleton
+          class VoiceCommandManager @Inject constructor(
+              @ApplicationContext private val context: Context,
+          ) {
+              sealed interface VoiceState {
+                  data object Idle : VoiceState
+                  data object Downloading : VoiceState
+                  data object Ready : VoiceState
+                  data object Listening : VoiceState
+                  data class Error(val message: String) : VoiceState
+              }
+              private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+              private val _state = MutableStateFlow<VoiceState>(VoiceState.Idle)
+              val state: StateFlow<VoiceState> = _state
+              private var speechService: SpeechService? = null
+              private var model: Model? = null
+              companion object {
+                  private const val AR_MODEL = "https://alphacephei.com/vosk/models/vosk-model-small-ar-0.22.zip"
+                  private const val EN_MODEL = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
+              }
+              private fun modelDir(lang: String): File = File(context.filesDir, "vosk/$lang")
+              fun isReady(lang: String): Boolean = modelDir(lang).exists() &&
+                  (modelDir(lang).listFiles()?.isNotEmpty() == true)
+              fun ensureModelAndStart(lang: String, onCommand: (String) -> Unit) {
+                  if (speechService != null) { stop(); return }
+                  if (isReady(lang)) { startListening(lang, onCommand); return }
+                  _state.value = VoiceState.Downloading
+                  val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                  val url = if (lang.startsWith("ar")) AR_MODEL else EN_MODEL
+                  val request = DownloadManager.Request(Uri.parse(url))
+                      .setDestinationInExternalFilesDir(context, "vosk", "$lang.zip")
+                      .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
+                  val id = runCatching { dm.enqueue(request) }.getOrElse {
+                      _state.value = VoiceState.Error(it.message ?: "download_failed"); return
+                  }
+                  val receiver = object : BroadcastReceiver() {
+                      override fun onReceive(ctx: Context, intent: Intent) {
+                          if (intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1) == id) {
+                              runCatching { ctx.unregisterReceiver(this) }
+                              scope.launch {
+                                  runCatching {
+                                      unzip(File(context.getExternalFilesDir("vosk"), "$lang.zip"), modelDir(lang))
+                                  }.onSuccess { startListening(lang, onCommand) }
+                                      .onFailure { _state.value = VoiceState.Error(it.message ?: "model_failed") }
+                              }
+                          }
+                      }
+                  }
+                  runCatching { context.registerReceiver(receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)) }
+              }
+              private fun unzip(zip: File, target: File) {
+                  if (!zip.exists()) error("download_missing")
+                  target.mkdirs()
+                  ZipInputStream(zip.inputStream()).use { zin ->
+                      var e = zin.nextEntry
+                      val rootPrefix = e?.name?.substringBefore('/') ?: ""
+                      while (e != null) {
+                          val rel = e.name.removePrefix(rootPrefix).trimStart('/')
+                          if (rel.isNotBlank()) {
+                              val out = File(target, rel)
+                              if (e.isDirectory) out.mkdirs()
+                              else { out.parentFile?.mkdirs(); out.outputStream().use { zin.copyTo(it) } }
+                          }
+                          zin.closeEntry()
+                          e = zin.nextEntry
+                      }
+                  }
+                  zip.delete()
+              }
+              private fun startListening(lang: String, onCommand: (String) -> Unit) {
+                  scope.launch {
+                      runCatching { withContext(Dispatchers.IO) { Model(modelDir(lang).path) } }
+                          .onSuccess { m ->
+                              model = m
+                              val grammar = """["[unk]","افتح","الملفات","الشاشة","open","files","mirror","connect","اتصل","الأجهزة","devices"]"""
+                              val recognizer = Recognizer(m, 16000.0f, grammar)
+                              speechService = SpeechService(recognizer, 16000.0f).apply {
+                                  startListening(object : RecognitionListener {
+                                      override fun onPartialResult(hypothesis: String?) {}
+                                      override fun onError(e: Exception?) {
+                                          _state.value = VoiceState.Error(e?.message ?: "mic_error")
+                                      }
+                                      override fun onTimeout() {}
+                                      override fun onResult(hypothesis: String?) {
+                                          hypothesis?.extractText()?.let { mapCommand(it) }?.let(onCommand)
+                                      }
+                                      override fun onFinalResult(hypothesis: String?) {
+                                          hypothesis?.extractText()?.let { mapCommand(it) }?.let(onCommand)
+                                      }
+                                  })
+                              }
+                              _state.value = VoiceState.Ready
+                          }
+                          .onFailure { _state.value = VoiceState.Error(it.message ?: "model_load_failed") }
+                  }
+              }
+              fun mapCommand(text: String): String? = when {
+                  text.contains("الملفات") || text.contains("files", ignoreCase = true) -> "files"
+                  text.contains("الشاشة") || text.contains("mirror", ignoreCase = true) -> "mirror"
+                  text.contains("اتصل") || text.contains("connect", ignoreCase = true) -> "devices"
+                  text.contains("الأجهزة") || text.contains("devices", ignoreCase = true) -> "devices"
+                  else -> null
+              }
+              fun stop() {
+                  runCatching { speechService?.stop() }
+                  runCatching { speechService?.shutdown() }
+                  speechService = null
+                  _state.value = VoiceState.Idle
+              }
+              private fun String.extractText(): String? = runCatching {
+                  org.json.JSONObject(this).getString("text")
+              }.getOrNull()?.takeIf { it.isNotBlank() }
+          }
+          KOTLIN_EOF
+          mkdir -p app/src/main/java/com/linkdeck/app/ui/messages
+          cat > app/src/main/java/com/linkdeck/app/ui/messages/MessagesViewModel.kt <<'KOTLIN_EOF'
+          package com.linkdeck.app.ui.messages
+          import androidx.lifecycle.ViewModel
+          import androidx.lifecycle.viewModelScope
+          import com.linkdeck.core.network.CmdReq
+          import com.linkdeck.core.network.ConnectionManager
+          import com.linkdeck.core.network.ProtoJson
+          import dagger.hilt.android.lifecycle.HiltViewModel
+          import javax.inject.Inject
+          import kotlinx.coroutines.flow.MutableStateFlow
+          import kotlinx.coroutines.flow.StateFlow
+          import kotlinx.coroutines.launch
+          import kotlinx.serialization.Serializable
+          import kotlinx.serialization.builtins.ListSerializer
+          @Serializable
+          data class SmsItem(val id: String, val address: String, val body: String)
+          @Serializable
+          data class ContactItem(val id: String, val name: String, val phone: String)
+          @Serializable
+          private data class WireItem(val id: String, val title: String, val subtitle: String)
+          @HiltViewModel
+          class MessagesViewModel @Inject constructor(
+              private val connectionManager: ConnectionManager,
+          ) : ViewModel() {
+              private val _sms = MutableStateFlow<List<SmsItem>>(emptyList())
+              val sms: StateFlow<List<SmsItem>> = _sms
+              private val _contacts = MutableStateFlow<List<ContactItem>>(emptyList())
+              val contacts: StateFlow<List<ContactItem>> = _contacts
+              private val _sending = MutableStateFlow(false)
+              val sending: StateFlow<Boolean> = _sending
+              private val _error = MutableStateFlow<String?>(null)
+              val error: StateFlow<String?> = _error
+              init { refresh() }
+              fun refresh() {
+                  viewModelScope.launch {
+                      connectionManager.request("cmd", ProtoJson.encodeToString(CmdReq.serializer(), CmdReq("sms_list")))
+                          .onSuccess { json ->
+                              runCatching {
+                                  _sms.value = ProtoJson.decodeFromString(ListSerializer(WireItem.serializer()), json)
+                                      .map { SmsItem(it.id, it.title, it.subtitle) }
+                              }
+                          }
+                          .onFailure { _error.value = it.message }
+                      connectionManager.request("cmd", ProtoJson.encodeToString(CmdReq.serializer(), CmdReq("contacts_list")))
+                          .onSuccess { json ->
+                              runCatching {
+                                  _contacts.value = ProtoJson.decodeFromString(ListSerializer(WireItem.serializer()), json)
+                                      .map { ContactItem(it.id, it.title, it.subtitle) }
+                              }
+                          }
+                  }
+              }
+              fun send(to: String, body: String) {
+                  _sending.value = true
+                  viewModelScope.launch {
+                      val str = kotlinx.serialization.serializer<String>()
+                      val args = """{"to":${ProtoJson.encodeToString(str, to)},"body":${ProtoJson.encodeToString(str, body)}}"""
+                      connectionManager.request("cmd", ProtoJson.encodeToString(CmdReq.serializer(), CmdReq("sms_send", args)))
+                          .onSuccess { refresh() }
+                          .onFailure { _error.value = it.message }
+                      _sending.value = false
+                  }
+              }
+          }
+          KOTLIN_EOF
+          mkdir -p app/src/main/java/com/linkdeck/app/ui/notifications
+          cat > app/src/main/java/com/linkdeck/app/ui/notifications/NotificationsViewModel.kt <<'KOTLIN_EOF'
+          package com.linkdeck.app.ui.notifications
+          import androidx.lifecycle.ViewModel
+          import androidx.lifecycle.viewModelScope
+          import com.linkdeck.core.network.CmdReq
+          import com.linkdeck.core.network.ConnectionManager
+          import com.linkdeck.core.network.Envelope
+          import com.linkdeck.core.network.NotifDismissPush
+          import com.linkdeck.core.network.NotifPush
+          import com.linkdeck.core.network.ProtoJson
+          import dagger.hilt.android.lifecycle.HiltViewModel
+          import javax.inject.Inject
+          import kotlinx.coroutines.flow.MutableStateFlow
+          import kotlinx.coroutines.flow.StateFlow
+          import kotlinx.coroutines.flow.update
+          import kotlinx.coroutines.launch
+          import kotlinx.serialization.builtins.ListSerializer
+          @HiltViewModel
+          class NotificationsViewModel @Inject constructor(
+              private val connectionManager: ConnectionManager,
+          ) : ViewModel() {
+              private val _items = MutableStateFlow<List<NotifPush>>(emptyList())
+              val items: StateFlow<List<NotifPush>> = _items
+              private val _hostClip = MutableStateFlow("")
+              val hostClip: StateFlow<String> = _hostClip
+              init {
+                  viewModelScope.launch {
+                      connectionManager.request(
+                          "cmd",
+                          ProtoJson.encodeToString(CmdReq.serializer(), CmdReq("notif_snapshot")),
+                      ).onSuccess { json ->
+                          runCatching {
+                              _items.value = ProtoJson.decodeFromString(ListSerializer(NotifPush.serializer()), json).reversed()
+                          }
+                      }
+                      connectionManager.events.collect { raw ->
+                          val env = runCatching { ProtoJson.decodeFromString(Envelope.serializer(), raw) }.getOrNull() ?: return@collect
+                          when (env.type) {
+                              "notif" -> runCatching {
+                                  ProtoJson.decodeFromString(NotifPush.serializer(), env.payload)
+                              }.onSuccess { push ->
+                                  _items.update { list -> (listOf(push) + list.filterNot { it.key == push.key }).take(50) }
+                              }
+                              "notif_removed" -> runCatching {
+                                  ProtoJson.decodeFromString(NotifDismissPush.serializer(), env.payload)
+                              }.onSuccess { d -> _items.update { list -> list.filterNot { it.key == d.key } } }
+                              "clip" -> runCatching {
+                                  ProtoJson.decodeFromString(com.linkdeck.core.network.ClipPush.serializer(), env.payload)
+                              }.onSuccess { c -> _hostClip.value = c.text }
+                          }
+                      }
+                  }
+              }
+              fun dismiss(key: String) = viewModelScope.launch {
+                  connectionManager.send(
+                      "cmd",
+                      ProtoJson.encodeToString(CmdReq.serializer(), CmdReq("notif_dismiss", """{"key":"$key"}""")),
+                  )
+              }
+              fun reply(key: String, text: String) = viewModelScope.launch {
+                  val str = kotlinx.serialization.serializer<String>()
+                  connectionManager.send(
+                      "cmd",
+                      ProtoJson.encodeToString(
+                          CmdReq.serializer(),
+                          CmdReq("notif_reply", """{"key":"$key","text":${ProtoJson.encodeToString(str, text)}}"""),
+                      ),
+                  )
+              }
+              fun sendClipboardToHost(text: String) = viewModelScope.launch {
+                  val str = kotlinx.serialization.serializer<String>()
+                  connectionManager.send(
+                      "cmd",
+                      ProtoJson.encodeToString(
+                          CmdReq.serializer(),
+                          CmdReq("set_clipboard", """{"text":${ProtoJson.encodeToString(str, text)}}"""),
+                      ),
+                  )
+              }
+          }
+          KOTLIN_EOF
+      - name: TLS key patch
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib, sys
+          p = pathlib.Path("core-network/src/main/java/com/linkdeck/core/network/Tls.kt")
+          t = p.read_text(encoding="utf-8")
+          NEW = 'val tlsPrefs = context.getSharedPreferences("linkdeck_tls", android.content.Context.MODE_PRIVATE)\n            val storePass = tlsPrefs.getString("pass", null)\n                ?: java.util.UUID.randomUUID().toString().also {\n                    tlsPrefs.edit().putString("pass", it).apply()\n                }'
+          if NEW in t: print("skip: tls")
+          elif 'val storePass = "linkdeck-selfsigned"' in t:
+              p.write_text(t.replace('val storePass = "linkdeck-selfsigned"', NEW, 1), encoding="utf-8"); print("patched: tls")
+          else: print("ANCHOR MISSING: tls"); sys.exit(1)
+          PYEOF
+      - name: Add all strings
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib
+          EN = [
+           '    <string name="crash_share">Share</string>\n    <string name="crash_hide">Never show</string>\n',
+           '    <string name="p2p_host_start">Wi-Fi Direct (no network needed)</string>\n    <string name="p2p_code_is">Code: %1$s</string>\n    <string name="p2p_connect">Wi-Fi Direct pairing</string>\n    <string name="p2p_hint">Enable Wi-Fi Direct on the phone, then tap its name here.</string>\n    <string name="p2p_empty">No nearby devices found.</string>\n    <string name="p2p_enter_code">6-digit code shown on the phone</string>\n',
+           '    <string name="font_ibm">IBM Plex Arabic</string>\n    <string name="font_madika">Madika Arabic</string>\n    <string name="font_basseet">Basseet</string>\n    <string name="font_camel">The Year of the Camel</string>\n',
+          ]
+          AR = [
+           '    <string name="crash_share">مشاركة</string>\n    <string name="crash_hide">لا تعرض مرة أخرى</string>\n',
+           '    <string name="p2p_host_start">واي فاي دايركت (بدون شبكة)</string>\n    <string name="p2p_code_is">الكود: %1$s</string>\n    <string name="p2p_connect">اقتران Wi-Fi Direct</string>\n    <string name="p2p_hint">فعّل Wi-Fi Direct على الهاتف ثم اضغط على اسمه هنا.</string>\n    <string name="p2p_empty">لا توجد أجهزة قريبة.</string>\n    <string name="p2p_enter_code">الكود الستة أرقام الظاهر على الهاتف</string>\n',
+           '    <string name="font_ibm">IBM بلكس عربي</string>\n    <string name="font_madika">ماديكا</string>\n    <string name="font_basseet">بسيط</string>\n    <string name="font_camel">سنة الجمل</string>\n',
+          ]
+          for path, blocks in [("app/src/main/res/values/strings.xml", EN), ("app/src/main/res/values-ar/strings.xml", AR)]:
+              p = pathlib.Path(path); t = p.read_text(encoding="utf-8")
+              for b in blocks:
+                  key = b.split('"')[1]
+                  if f'name="{key}"' not in t:
+                      t = t.replace("</resources>", b + "</resources>")
+              p.write_text(t, encoding="utf-8")
+          print("strings OK")
+          PYEOF
+      - name: Commit and push
+        run: |
+          git config user.name "Mohammedazizhedia"
+          git config user.email "mohammedazizhedia@gmail.com"
+          git add -A
+          git commit -m "Rebuild core: P2P + security + diagnostics"
+          git push
