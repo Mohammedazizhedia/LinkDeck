@@ -1,0 +1,46 @@
+name: Final Fix
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Accept auth_ok replies (with or without type field) + camera fill
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib, sys
+
+          def patch(path, old, new, label):
+              p = pathlib.Path(path); t = p.read_text(encoding="utf-8")
+              if new in t: print("skip:", label); return
+              if old not in t: print("ANCHOR MISSING:", label); sys.exit(1)
+              p.write_text(t.replace(old, new, 1), encoding="utf-8"); print("patched:", label)
+
+          patch("app/src/main/java/com/linkdeck/app/pairing/PairingManager.kt",
+                'if (!text.contains("\\"auth_ok\\"")) throw SecurityException("Pairing rejected: $text")',
+                'if (!text.contains("\\"auth_ok\\"") && !text.contains("\\"deviceToken\\"")) throw SecurityException("Pairing rejected: $text")',
+                "pairing auth check")
+
+          patch("core-network/src/main/java/com/linkdeck/core/network/ConnectionManager.kt",
+                'if (!text.contains("\\"auth_ok\\"")) {',
+                'if (!text.contains("\\"auth_ok\\"") && !text.contains("\\"deviceToken\\"")) {',
+                "reconnect auth check")
+
+          patch("app/src/main/java/com/linkdeck/app/ui/pairing/ScanQrScreen.kt",
+                'CameraQrView(onCode = vm::onScanned, modifier = Modifier.weight(1f))',
+                'CameraQrView(onCode = vm::onScanned, modifier = Modifier.fillMaxWidth().weight(1f))',
+                "camera full width")
+          print("ALL OK")
+          PYEOF
+      - name: Commit and push
+        run: |
+          git config user.name "Mohammedazizhedia"
+          git config user.email "mohammedazizhedia@gmail.com"
+          git add -A
+          git commit -m "Accept auth replies without type field + camera fill"
+          git push
