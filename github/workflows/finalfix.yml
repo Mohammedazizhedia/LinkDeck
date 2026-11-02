@@ -10,7 +10,7 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Accept auth_ok replies (with or without type field) + camera fill
+      - name: Accept server auth replies + camera fill
         run: |
           python3 - <<'PYEOF'
           import pathlib, sys
@@ -42,5 +42,5 @@ jobs:
           git config user.name "Mohammedazizhedia"
           git config user.email "mohammedazizhedia@gmail.com"
           git add -A
-          git commit -m "Accept auth replies without type field + camera fill"
+          git commit -m "Accept auth replies + camera fill"
           git push
