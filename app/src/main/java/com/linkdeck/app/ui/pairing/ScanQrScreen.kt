@@ -146,7 +146,7 @@ fun ScanQrScreen(onBack: () -> Unit) {
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(Spacing.xl),
                     )
-                    CameraQrView(onCode = vm::onScanned, modifier = Modifier.weight(1f))
+                    CameraQrView(onCode = vm::onScanned, modifier = Modifier.fillMaxWidth().weight(1f))
                 }
                 ScanUiState.Pairing -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

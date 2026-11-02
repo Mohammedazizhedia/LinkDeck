@@ -132,7 +132,7 @@ class PairingManager @Inject constructor(
                     val reply = incoming.receive() as? Frame.Text
                         ?: throw SecurityException("Host did not reply")
                     val text = reply.readText()
-                    if (!text.contains("\"auth_ok\"")) throw SecurityException("Pairing rejected: $text")
+                    if (!text.contains("\"auth_ok\"") && !text.contains("\"deviceToken\"")) throw SecurityException("Pairing rejected: $text")
                     val ok = Json.decodeFromString(AuthOk.serializer(), text)
                     trusted = TrustedDevice(
                         id = ok.deviceId,
