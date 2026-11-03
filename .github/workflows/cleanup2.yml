@@ -1,0 +1,22 @@
+name: Cleanup2
+
+on:
+  workflow_dispatch:
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Delete all workflows except build.yml
+        run: |
+          echo "BEFORE:"
+          ls .github/workflows/ || true
+          find .github/workflows -type f -not -name 'build.yml' -delete || true
+          echo "AFTER:"
+          ls .github/workflows/ || true
+          git add -A || true
+          git commit -m "cleanup: keep build only" || true
+          git push || true
