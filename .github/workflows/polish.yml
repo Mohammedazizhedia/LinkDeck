@@ -1,0 +1,63 @@
+name: Icons and Names
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Solid white notification icon (replaces broken one)
+        run: |
+          cat > app/src/main/res/drawable/ic_stat_linkdeck.xml <<'KOTLIN_EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp"
+              android:height="24dp"
+              android:viewportWidth="24"
+              android:viewportHeight="24"
+              android:tint="#FFFFFF">
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M7,2 L17,2 A2,2 0 0 1 19,4 L19,20 A2,2 0 0 1 17,22 L7,22 A2,2 0 0 1 5,20 L5,4 A2,2 0 0 1 7,2 Z M8.5,5 L15.5,5 L15.5,17 L8.5,17 Z" />
+          </vector>
+          KOTLIN_EOF
+
+      - name: Zip artifacts named with app name + version
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib, re
+          p = pathlib.Path(".github/workflows/build.yml")
+          t = p.read_text(encoding="utf-8")
+
+          # insert a version-extraction step right after checkout
+          anchor = "      - uses: actions/checkout@v4\n"
+          step = anchor + """
+      - name: Read app version
+        id: ver
+        run: |
+          V=$(grep versionName app/build.gradle.kts | head -1 | sed 's/.*"\\(.*\\)".*/\\1/')
+          echo "v=$V" >> "$GITHUB_OUTPUT"
+"""
+          if "Read app version" not in t:
+              assert anchor in t
+              t = t.replace(anchor, step, 1)
+
+          t = t.replace("name: LinkDeck_Build_${{ github.run_number }}",
+                        "name: LinkDeck_v${{ steps.ver.outputs.v }}_debug_${{ github.run_number }}")
+          t = t.replace("name: LinkDeck_Release_${{ github.run_number }}",
+                        "name: LinkDeck_v${{ steps.ver.outputs.v }}_release_${{ github.run_number }}")
+          p.write_text(t, encoding="utf-8")
+          print("build.yml patched")
+          PYEOF
+
+      - name: Commit and push
+        run: |
+          git config user.name "Mohammedazizhedia"
+          git config user.email "mohammedazizhedia@gmail.com"
+          git add -A
+          git commit -m "Named artifacts with version + solid notification icon"
+          git push
