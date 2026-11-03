@@ -1,0 +1,41 @@
+name: Mirror Buttons Fix
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make mirror buttons visible
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib
+          p = pathlib.Path("app/src/main/java/com/linkdeck/app/ui/mirror/MirrorScreen.kt")
+          t = p.read_text(encoding="utf-8")
+          if "verticalScroll" not in t:
+              t = t.replace("        modifier.padding(Spacing.xl),",
+                            "        modifier.padding(Spacing.xl).verticalScroll(rememberScrollState()),", 1)
+              t = t.replace("Modifier.fillMaxWidth().aspectRatio(9f / 16f).weight(1f, fill = false),",
+                            "Modifier.fillMaxWidth().height(400.dp),", 1)
+              for imp in ["import androidx.compose.foundation.rememberScrollState",
+                          "import androidx.compose.foundation.verticalScroll",
+                          "import androidx.compose.foundation.layout.height"]:
+                  if imp not in t:
+                      t = t.replace("import androidx.compose.foundation.Image",
+                                    imp + "\nimport androidx.compose.foundation.Image", 1)
+              p.write_text(t, encoding="utf-8")
+              print("patched")
+          else:
+              print("skip")
+          PYEOF
+      - name: Commit and push
+        run: |
+          git config user.name "Mohammedazizhedia"
+          git config user.email "mohammedazizhedia@gmail.com"
+          git add -A
+          git commit -m "Mirror: fixed buttons visibility"
+          git push
