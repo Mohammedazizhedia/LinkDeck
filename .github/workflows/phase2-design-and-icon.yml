@@ -1,4 +1,4 @@
-name: Phase 2 - Design System & App Icon
+name: Phase 2 - App Icon Only
 
 on:
   workflow_dispatch:
@@ -20,6 +20,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Reset to last successful commit
+        run: |
+          echo "🔄 Resetting to commit: a863614 (Mirror: fixed buttons visibility)"
+          git fetch origin
+          git reset --hard a863614
+          echo "✅ Reset complete"
 
       - uses: actions/setup-java@v4
         with:
@@ -79,148 +86,9 @@ jobs:
           cp app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
           echo "✅ App icon created"
 
-      - name: Add DesignTokens.kt (NEW file - no conflict)
-        run: |
-          mkdir -p core-design/src/main/java/com/linkdeck/core/design
-          cat > core-design/src/main/java/com/linkdeck/core/design/DesignTokens.kt << 'KT'
-          package com.linkdeck.core.design
-          import androidx.compose.ui.graphics.Color
-          import androidx.compose.ui.unit.dp
-          import androidx.compose.ui.unit.sp
-
-          object DesignTokens {
-              val DarkBackground = Color(0xFF0E0B1F)
-              val DarkSurface = Color(0xFF1A1633)
-              val DarkRail = Color(0xFF141026)
-              val DarkBorder = Color(0xFF2B2650)
-              val DarkTile = Color(0xFF2A2455)
-              val DarkTileIcon = Color(0xFFC9C2FF)
-              val LightBackground = Color(0xFFF8F7F3)
-              val LightSurface = Color(0xFFEFEDE6)
-              val LightBorder = Color(0xFFD8D6CC)
-              val LightTile = Color(0xFFE4E0F7)
-              val LightTileIcon = Color(0xFF4A3FB8)
-              val Primary = Color(0xFF5B4BD6)
-              val MiddleRingColor = Color(0xFF4A4290)
-              val DangerBg = Color(0xFF3A1212)
-              val DangerText = Color(0xFFF87171)
-              val LinkColor = Color(0xFFB9AFFF)
-              val TextPrimaryDark = Color(0xFFEDEBFF)
-              val TextSecondaryDark = Color(0xFFA9A4CF)
-              val TextPrimaryLight = Color(0xFF1B1C1A)
-              val TextSecondaryLight = Color(0xFF44463F)
-              val SuccessBg = Color(0xFF12322E)
-              val SuccessText = Color(0xFF5EEAD4)
-              val WarningBg = Color(0xFF3A2A10)
-              val WarningText = Color(0xFFFBBF24)
-              val CardRadius = 24.dp
-              val TileRadius = 15.dp
-              val TileSize = 44.dp
-              val ButtonHeight = 48.dp
-              val ScreenPadding = 22.dp
-              val CardPadding = 16.dp
-              val GapBetweenCards = 14.dp
-          }
-          KT
-          echo "✅ DesignTokens.kt added (new file)"
-
-      - name: Check existing components
-        run: |
-          echo "🔍 Existing components:"
-          ls -la core-design/src/main/java/com/linkdeck/core/design/components/ 2>/dev/null || echo "No components yet"
-
-      - name: Add LinkDeckComponents.kt (NEW file - no conflict)
-        run: |
-          mkdir -p core-design/src/main/java/com/linkdeck/core/design/components
-          cat > core-design/src/main/java/com/linkdeck/core/design/components/LinkDeckComponents.kt << 'KT'
-          package com.linkdeck.core.design.components
-
-          import androidx.compose.animation.core.*
-          import androidx.compose.foundation.background
-          import androidx.compose.foundation.border
-          import androidx.compose.foundation.layout.*
-          import androidx.compose.foundation.shape.CircleShape
-          import androidx.compose.foundation.shape.RoundedCornerShape
-          import androidx.compose.material3.*
-          import androidx.compose.runtime.*
-          import androidx.compose.ui.Alignment
-          import androidx.compose.ui.Modifier
-          import androidx.compose.ui.draw.clip
-          import androidx.compose.ui.draw.scale
-          import androidx.compose.ui.graphics.Color
-          import androidx.compose.ui.graphics.vector.ImageVector
-          import androidx.compose.ui.unit.dp
-          import com.linkdeck.core.design.DesignTokens
-
-          @Composable
-          fun LinkDeckCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-              Card(
-                  modifier = modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(DesignTokens.CardRadius)),
-                  shape = RoundedCornerShape(DesignTokens.CardRadius),
-                  colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                  elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-              ) {
-                  Column(modifier = Modifier.padding(DesignTokens.CardPadding.dp), content = content)
-              }
-          }
-
-          @Composable
-          fun IconTile(icon: ImageVector, modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.primary, backgroundColor: Color = MaterialTheme.colorScheme.surfaceVariant, size: Int = 44, contentDescription: String? = null) {
-              Box(modifier = modifier.size(size.dp).clip(RoundedCornerShape(DesignTokens.TileRadius)).background(backgroundColor), contentAlignment = Alignment.Center) {
-                  Icon(imageVector = icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(22.dp))
-              }
-          }
-
-          enum class ChipVariant { Success, Warning, Danger }
-
-          @Composable
-          fun StatusChip(text: String, variant: ChipVariant, modifier: Modifier = Modifier) {
-              val (bg, textColor) = when (variant) {
-                  ChipVariant.Success -> DesignTokens.SuccessBg to DesignTokens.SuccessText
-                  ChipVariant.Warning -> DesignTokens.WarningBg to DesignTokens.WarningText
-                  ChipVariant.Danger -> DesignTokens.DangerBg to DesignTokens.DangerText
-              }
-              Surface(modifier = modifier, shape = RoundedCornerShape(50), color = bg) {
-                  Text(text = text, modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = textColor)
-              }
-          }
-
-          enum class ButtonVariant { Primary, Outlined }
-
-          @Composable
-          fun PillButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, variant: ButtonVariant = ButtonVariant.Primary, enabled: Boolean = true) {
-              when (variant) {
-                  ButtonVariant.Primary -> {
-                      Button(onClick = onClick, modifier = modifier.fillMaxWidth().height(DesignTokens.ButtonHeight), enabled = enabled, shape = RoundedCornerShape(50), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = Color.White)) {
-                          Text(text, style = MaterialTheme.typography.titleMedium)
-                      }
-                  }
-                  ButtonVariant.Outlined -> {
-                      OutlinedButton(onClick = onClick, modifier = modifier.fillMaxWidth().height(DesignTokens.ButtonHeight), enabled = enabled, shape = RoundedCornerShape(50), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onBackground)) {
-                          Text(text, style = MaterialTheme.typography.titleMedium)
-                      }
-                  }
-              }
-          }
-
-          @Composable
-          fun ConnectionOrb(icon: ImageVector, isConnected: Boolean, modifier: Modifier = Modifier) {
-              val infiniteTransition = rememberInfiniteTransition(label = "orb")
-              val scale by infiniteTransition.animateFloat(initialValue = 1f, targetValue = if (isConnected) 1.03f else 1f, animationSpec = infiniteRepeatable(animation = tween(2000, easing = CubicBezierEasing(0.37f, 0f, 0.63f, 1f)), repeatMode = RepeatMode.Reverse), label = "scale")
-              Box(modifier = modifier.size(230.dp), contentAlignment = Alignment.Center) {
-                  Box(modifier = Modifier.size(230.dp).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape))
-                  Box(modifier = Modifier.size(176.dp).border(1.dp, DesignTokens.MiddleRingColor, CircleShape))
-                  Box(modifier = Modifier.size(118.dp).scale(scale).background(MaterialTheme.colorScheme.primary, CircleShape), contentAlignment = Alignment.Center) {
-                      Icon(imageVector = icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(48.dp))
-                  }
-              }
-          }
-          KT
-          echo "✅ LinkDeckComponents.kt added (new file)"
-
       - name: Build app
         run: |
-          echo "🔨 Building with existing project config..."
+          echo "🔨 Building from last successful commit..."
           if [ -f "./gradlew" ]; then
               chmod +x ./gradlew
               ./gradlew :app:assembleDebug --stacktrace
@@ -249,7 +117,7 @@ jobs:
           Version: VERSION_PLACEHOLDER
           Build:   BUILD_PLACEHOLDER
           Date:    DATE_PLACEHOLDER
-          Phase:   2 - Design System & App Icon
+          Phase:   2 - App Icon Only
           ═══════════════════════════════════════════════════
           BFB
           sed -i "s/VERSION_PLACEHOLDER/$V/" out/BFB.txt
@@ -265,13 +133,12 @@ jobs:
           tag_name: v${{ github.event.inputs.version }}-build${{ github.event.inputs.build_number }}
           name: LinkDeck v${{ github.event.inputs.version }} (Build #${{ github.event.inputs.build_number }})
           body: |
-            ## 🎨 Phase 2 - Design System & App Icon
+            ## 🎨 Phase 2 - App Icon Only
             **Built with BFB.AI - Built For Benefits, by AI**
             
             ### What's New
-            - ✅ New adaptive app icon (concentric rings)
-            - ✅ DesignTokens.kt (colors, spacing, sizes)
-            - ✅ LinkDeckComponents.kt (reusable UI components)
+            - ✅ New adaptive app icon (concentric rings design)
+            - 🔄 Reset to last successful commit (a863614)
             
             SHA256: $(cat ${{ env.ZIP_NAME }}.sha256 | cut -d' ' -f1)
           files: |
