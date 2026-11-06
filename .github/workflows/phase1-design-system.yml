@@ -34,6 +34,31 @@ jobs:
           sudo apt-get install -y gradle
           gradle --version
       
+      - name: Fix settings.gradle.kts
+        run: |
+          echo "🔧 Checking settings.gradle.kts..."
+          cat settings.gradle.kts
+          echo "---"
+          
+          # Add missing modules if not present
+          if ! grep -q '":core-design"' settings.gradle.kts; then
+            echo 'include(":core-design")' >> settings.gradle.kts
+            echo "✅ Added :core-design"
+          fi
+          
+          if ! grep -q '":core-network"' settings.gradle.kts; then
+            echo 'include(":core-network")' >> settings.gradle.kts
+            echo "✅ Added :core-network"
+          fi
+          
+          if ! grep -q '":app"' settings.gradle.kts; then
+            echo 'include(":app")' >> settings.gradle.kts
+            echo "✅ Added :app"
+          fi
+          
+          echo "Final settings.gradle.kts:"
+          cat settings.gradle.kts
+      
       - name: Move fonts to correct location
         run: |
           echo "📦 Moving fonts..."
@@ -298,10 +323,10 @@ jobs:
           EOF
           echo "✅ Created Components.kt"
       
-      - name: Build core-design module
+      - name: Build app module
         run: |
-          echo "🔨 Building core-design..."
-          gradle :core-design:assembleDebug --stacktrace
+          echo "🔨 Building app..."
+          gradle :app:assembleDebug --stacktrace
           echo "✅ Build complete"
       
       - name: Set version variables
