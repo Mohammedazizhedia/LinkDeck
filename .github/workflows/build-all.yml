@@ -1,4 +1,4 @@
-name: Fix Fonts & Build LinkDeck
+name: Phase 1 - Design System & Build
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ on:
         default: '001'
 
 jobs:
-  fix-fonts-and-build:
+  setup-and-build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -24,27 +24,150 @@ jobs:
       
       - name: Move fonts to correct location
         run: |
-          # Create font directory
+          echo "📦 Moving fonts..."
           mkdir -p core-design/src/main/res/font
           
-          # Move all font files from root to font directory
-          for font in cairo_variable.ttf readexpro_variable.ttf anton_regular.ttf montserrat_variable.ttf montserrat_italic_variable.ttf roboto_variable.ttf roboto_italic_variable.ttf; do
+          fonts=("cairo_variable.ttf" "readexpro_variable.ttf" "anton_regular.ttf" "montserrat_variable.ttf" "montserrat_italic_variable.ttf" "roboto_variable.ttf" "roboto_italic_variable.ttf")
+          
+          for font in "${fonts[@]}"; do
             if [ -f "$font" ]; then
-              mv "$font" core-design/src/main/res/font/
+              mv "$font" "core-design/src/main/res/font/"
               echo "✅ Moved: $font"
+            else
+              echo "⚠️ Not found: $font"
             fi
           done
           
-          # List fonts in correct location
-          echo "Fonts in correct location:"
+          echo "Fonts in place:"
           ls -la core-design/src/main/res/font/
       
-      - name: Create Type.kt with variable fonts
+      - name: Create DesignTokens.kt
         run: |
-          cat > core-design/src/main/java/com/linkdeck/core/design/theme/Type.kt << 'KOTLIN_EOF'
+          cat > core-design/src/main/java/com/linkdeck/core/design/DesignTokens.kt << 'EOF'
+          // Built with BFB.AI — Built For Benefits, by AI
+          package com.linkdeck.core.design
+
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+
+          object DesignTokens {
+              // Dark Theme
+              val DarkBackground = Color(0xFF0E0B1F)
+              val DarkSurface = Color(0xFF1A1633)
+              val DarkRail = Color(0xFF141026)
+              val DarkBorder = Color(0xFF2B2650)
+              val DarkTile = Color(0xFF2A2455)
+              val DarkTileIcon = Color(0xFFC9C2FF)
+              
+              // Light Theme
+              val LightBackground = Color(0xFFF8F7F3)
+              val LightSurface = Color(0xFFEFEDE6)
+              val LightBorder = Color(0xFFD8D6CC)
+              val LightTile = Color(0xFFE4E0F7)
+              val LightTileIcon = Color(0xFF4A3FB8)
+              
+              // Common
+              val Primary = Color(0xFF5B4BD6)
+              val MiddleRingColor = Color(0xFF4A4290)
+              val DangerBg = Color(0xFF3A1212)
+              val DangerText = Color(0xFFF87171)
+              val LinkColor = Color(0xFFB9AFFF)
+              
+              // Text Colors
+              val TextPrimaryDark = Color(0xFFEDEBFF)
+              val TextSecondaryDark = Color(0xFFA9A4CF)
+              val TextPrimaryLight = Color(0xFF1B1C1A)
+              val TextSecondaryLight = Color(0xFF44463F)
+              
+              // Status Colors
+              val SuccessBg = Color(0xFF12322E)
+              val SuccessText = Color(0xFF5EEAD4)
+              val WarningBg = Color(0xFF3A2A10)
+              val WarningText = Color(0xFFFBBF24)
+              
+              // Typography
+              val TitleFontSize = 26.sp
+              val SectionTitleFontSize = 20.sp
+              val ItemNameFontSize = 15.sp
+              val BodyFontSize = 13.sp
+              val ChipFontSize = 12.sp
+              val LabelFontSize = 11.sp
+              
+              // Shapes & Spacing
+              val CardRadius = 24.dp
+              val TileRadius = 15.dp
+              val TileSize = 44.dp
+              val ButtonHeight = 48.dp
+              val ScreenPadding = 22.dp
+              val CardPadding = 16.dp
+              val GapBetweenCards = 14.dp
+          }
+          EOF
+          echo "✅ Created DesignTokens.kt"
+      
+      - name: Create Theme.kt
+        run: |
+          cat > core-design/src/main/java/com/linkdeck/core/design/theme/Theme.kt << 'EOF'
           // Built with BFB.AI — Built For Benefits, by AI
           package com.linkdeck.core.design.theme
-          
+
+          import androidx.compose.foundation.isSystemInDarkTheme
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.darkColorScheme
+          import androidx.compose.material3.lightColorScheme
+          import androidx.compose.runtime.Composable
+          import androidx.compose.ui.graphics.Color
+          import com.linkdeck.core.design.DesignTokens
+
+          private val DarkColorScheme = darkColorScheme(
+              background = DesignTokens.DarkBackground,
+              surface = DesignTokens.DarkSurface,
+              surfaceVariant = DesignTokens.DarkRail,
+              primary = DesignTokens.Primary,
+              onPrimary = Color.White,
+              onBackground = DesignTokens.TextPrimaryDark,
+              onSurface = DesignTokens.TextPrimaryDark,
+              onSurfaceVariant = DesignTokens.TextSecondaryDark,
+              outline = DesignTokens.DarkBorder,
+              outlineVariant = DesignTokens.DarkBorder
+          )
+
+          private val LightColorScheme = lightColorScheme(
+              background = DesignTokens.LightBackground,
+              surface = DesignTokens.LightSurface,
+              surfaceVariant = DesignTokens.LightSurface,
+              primary = DesignTokens.Primary,
+              onPrimary = Color.White,
+              onBackground = DesignTokens.TextPrimaryLight,
+              onSurface = DesignTokens.TextPrimaryLight,
+              onSurfaceVariant = DesignTokens.TextSecondaryLight,
+              outline = DesignTokens.LightBorder,
+              outlineVariant = DesignTokens.LightBorder
+          )
+
+          @Composable
+          fun LinkDeckTheme(
+              darkTheme: Boolean = isSystemInDarkTheme(),
+              content: @Composable () -> Unit
+          ) {
+              val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+
+              MaterialTheme(
+                  colorScheme = colorScheme,
+                  typography = LinkDeckTypography,
+                  content = content
+              )
+          }
+          EOF
+          echo "✅ Created Theme.kt"
+      
+      - name: Create Type.kt
+        run: |
+          cat > core-design/src/main/java/com/linkdeck/core/design/theme/Type.kt << 'EOF'
+          // Built with BFB.AI — Built For Benefits, by AI
+          package com.linkdeck.core.design.theme
+
           import androidx.compose.material3.Typography
           import androidx.compose.ui.text.TextStyle
           import androidx.compose.ui.text.font.Font
@@ -53,69 +176,21 @@ jobs:
           import androidx.compose.ui.text.font.FontWeight
           import androidx.compose.ui.unit.sp
           import com.linkdeck.core.design.R
-          
-          // Cairo Variable Font (للعناوين)
+
           val Cairo = FontFamily(
-              Font(
-                  resId = R.font.cairo_variable,
-                  weight = FontWeight.Normal,
-                  variationSettings = FontVariation.Settings(FontVariation.weight(400))
-              ),
-              Font(
-                  resId = R.font.cairo_variable,
-                  weight = FontWeight.SemiBold,
-                  variationSettings = FontVariation.Settings(FontVariation.weight(600))
-              ),
-              Font(
-                  resId = R.font.cairo_variable,
-                  weight = FontWeight.Bold,
-                  variationSettings = FontVariation.Settings(FontVariation.weight(700))
-              ),
-              Font(
-                  resId = R.font.cairo_variable,
-                  weight = FontWeight.ExtraBold,
-                  variationSettings = FontVariation.Settings(FontVariation.weight(800))
-              )
+              Font(R.font.cairo_variable, FontWeight.Normal, FontVariation.Settings(FontVariation.weight(400))),
+              Font(R.font.cairo_variable, FontWeight.SemiBold, FontVariation.Settings(FontVariation.weight(600))),
+              Font(R.font.cairo_variable, FontWeight.Bold, FontVariation.Settings(FontVariation.weight(700))),
+              Font(R.font.cairo_variable, FontWeight.ExtraBold, FontVariation.Settings(FontVariation.weight(800)))
           )
-          
-          // Readex Pro Variable Font (للنصوص)
+
           val ReadexPro = FontFamily(
-              Font(
-                  resId = R.font.readexpro_variable,
-                  weight = FontWeight.Light,
-                  variationSettings = FontVariation.Settings(FontVariation.weight(300))
-              ),
-              Font(
-                  resId = R.font.readexpro_variable,
-                  weight = FontWeight.Normal,
-                  variationSettings = FontVariation.Settings(FontVariation.weight(400))
-              ),
-              Font(
-                  resId = R.font.readexpro_variable,
-                  weight = FontWeight.Medium,
-                  variationSettings = FontVariation.Settings(FontVariation.weight(500))
-              ),
-              Font(
-                  resId = R.font.readexpro_variable,
-                  weight = FontWeight.SemiBold,
-                  variationSettings = FontVariation.Settings(FontVariation.weight(600))
-              )
+              Font(R.font.readexpro_variable, FontWeight.Light, FontVariation.Settings(FontVariation.weight(300))),
+              Font(R.font.readexpro_variable, FontWeight.Normal, FontVariation.Settings(FontVariation.weight(400))),
+              Font(R.font.readexpro_variable, FontWeight.Medium, FontVariation.Settings(FontVariation.weight(500))),
+              Font(R.font.readexpro_variable, FontWeight.SemiBold, FontVariation.Settings(FontVariation.weight(600)))
           )
-          
-          // Montserrat Variable Font (اختياري - للعناوين اللاتينية)
-          val Montserrat = FontFamily(
-              Font(
-                  resId = R.font.montserrat_variable,
-                  weight = FontWeight.Normal,
-                  variationSettings = FontVariation.Settings(FontVariation.weight(400))
-              ),
-              Font(
-                  resId = R.font.montserrat_variable,
-                  weight = FontWeight.Bold,
-                  variationSettings = FontVariation.Settings(FontVariation.weight(700))
-              )
-          )
-          
+
           val LinkDeckTypography = Typography(
               displayLarge = TextStyle(fontFamily = Cairo, fontWeight = FontWeight.ExtraBold, fontSize = 34.sp, lineHeight = 40.sp),
               headlineLarge = TextStyle(fontFamily = Cairo, fontWeight = FontWeight.Bold, fontSize = 26.sp, lineHeight = 32.sp),
@@ -129,17 +204,103 @@ jobs:
               labelMedium = TextStyle(fontFamily = ReadexPro, fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 16.sp),
               labelSmall = TextStyle(fontFamily = ReadexPro, fontWeight = FontWeight.Medium, fontSize = 11.sp, lineHeight = 14.sp)
           )
-          KOTLIN_EOF
-          
-          echo "✅ Created Type.kt with variable fonts support"
+          EOF
+          echo "✅ Created Type.kt"
       
-      - name: Commit font fixes
+      - name: Create Components.kt
         run: |
-          git config user.name "Mohammedazizhedia"
-          git config user.email "mohammedazizhedia@gmail.com"
-          git add -A
-          git commit -m "Fix: Move fonts to correct location and create Type.kt" || echo "No changes to commit"
-          git push
+          mkdir -p core-design/src/main/java/com/linkdeck/core/design/components
+          cat > core-design/src/main/java/com/linkdeck/core/design/components/Components.kt << 'EOF'
+          // Built with BFB.AI — Built For Benefits, by AI
+          package com.linkdeck.core.design.components
+
+          import androidx.compose.animation.core.*
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.border
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.blur
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.draw.scale
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.vector.ImageVector
+          import androidx.compose.ui.unit.dp
+          import com.linkdeck.core.design.DesignTokens
+
+          @Composable
+          fun LinkDeckCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+              Card(
+                  modifier = modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(DesignTokens.CardRadius)),
+                  shape = RoundedCornerShape(DesignTokens.CardRadius),
+                  colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                  elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+              ) {
+                  Column(modifier = Modifier.padding(DesignTokens.CardPadding.dp), content = content)
+              }
+          }
+
+          @Composable
+          fun IconTile(icon: ImageVector, modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.primary, backgroundColor: Color = MaterialTheme.colorScheme.surfaceVariant, size: Int = 44, contentDescription: String? = null) {
+              Box(modifier = modifier.size(size.dp).clip(RoundedCornerShape(DesignTokens.TileRadius)).background(backgroundColor), contentAlignment = Alignment.Center) {
+                  Icon(imageVector = icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(22.dp))
+              }
+          }
+
+          enum class ChipVariant { Success, Warning, Danger }
+
+          @Composable
+          fun StatusChip(text: String, variant: ChipVariant, modifier: Modifier = Modifier) {
+              val (bg, textColor) = when (variant) {
+                  ChipVariant.Success -> DesignTokens.SuccessBg to DesignTokens.SuccessText
+                  ChipVariant.Warning -> DesignTokens.WarningBg to DesignTokens.WarningText
+                  ChipVariant.Danger -> DesignTokens.DangerBg to DesignTokens.DangerText
+              }
+              Surface(modifier = modifier, shape = RoundedCornerShape(50), color = bg) {
+                  Text(text = text, modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = textColor)
+              }
+          }
+
+          enum class ButtonVariant { Primary, Outlined }
+
+          @Composable
+          fun PillButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, variant: ButtonVariant = ButtonVariant.Primary, enabled: Boolean = true) {
+              when (variant) {
+                  ButtonVariant.Primary -> {
+                      Button(onClick = onClick, modifier = modifier.fillMaxWidth().height(DesignTokens.ButtonHeight), enabled = enabled, shape = RoundedCornerShape(50), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = Color.White)) {
+                          Text(text, style = MaterialTheme.typography.titleMedium)
+                      }
+                  }
+                  ButtonVariant.Outlined -> {
+                      OutlinedButton(onClick = onClick, modifier = modifier.fillMaxWidth().height(DesignTokens.ButtonHeight), enabled = enabled, shape = RoundedCornerShape(50), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onBackground)) {
+                          Text(text, style = MaterialTheme.typography.titleMedium)
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun ConnectionOrb(icon: ImageVector, isConnected: Boolean, modifier: Modifier = Modifier) {
+              val infiniteTransition = rememberInfiniteTransition(label = "orb")
+              val scale by infiniteTransition.animateFloat(initialValue = 1f, targetValue = if (isConnected) 1.03f else 1f, animationSpec = infiniteRepeatable(animation = tween(2000, easing = EaseInOutSine), repeatMode = RepeatMode.Reverse), label = "scale")
+
+              Box(modifier = modifier.size(230.dp), contentAlignment = Alignment.Center) {
+                  Box(modifier = Modifier.size(230.dp).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape))
+                  Box(modifier = Modifier.size(176.dp).border(1.dp, DesignTokens.MiddleRingColor, CircleShape))
+                  Box(modifier = Modifier.size(118.dp).scale(scale).background(MaterialTheme.colorScheme.primary, CircleShape), contentAlignment = Alignment.Center) {
+                      Icon(imageVector = icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(48.dp))
+                  }
+              }
+          }
+
+          private val EaseInOutSine: Easing = CubicBezierEasing(0.37f, 0f, 0.63f, 1f)
+          EOF
+          echo "✅ Created Components.kt"
       
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -152,7 +313,16 @@ jobs:
         run: chmod +x gradlew
       
       - name: Build Debug APK
-        run: ./gradlew :app:assembleDebug
+        run: |
+          echo "🔨 Building APK..."
+          ./gradlew :app:assembleDebug --stacktrace
+          
+          if [ $? -eq 0 ]; then
+              echo "✅ Build successful!"
+          else
+              echo "❌ Build failed!"
+              exit 1
+          fi
       
       - name: Set version variables
         id: vars
@@ -174,7 +344,7 @@ jobs:
           ═══════════════════════════════════════════════════════════════════
           BFB.AI
           Built For Benefits, by AI
-          ═══════════════════════════════════════════════════════════════════
+          ══════════════════════════════════════════════════════════════════
           
           Name:    LinkDeck
           Version: ${{ steps.vars.outputs.version }}
@@ -195,18 +365,15 @@ jobs:
           ZIP_NAME="${{ steps.vars.outputs.zip_name }}"
           APK_PATH="${{ steps.vars.outputs.apk_path }}"
           
-          # Create organized folder
           mkdir -p LinkDeck_Release
           cp "$APK_PATH" LinkDeck_Release/LinkDeck.apk
           cp BFB.txt LinkDeck_Release/
           cp README.md LinkDeck_Release/ 2>/dev/null || true
           
-          # Create ZIP
           cd LinkDeck_Release
           zip -r "../$ZIP_NAME" .
           cd ..
           
-          # Calculate SHA256
           sha256sum "$ZIP_NAME" > "${ZIP_NAME}.sha256"
           
           echo "✅ Created: $ZIP_NAME"
@@ -237,11 +404,11 @@ jobs:
             - ✅ README.md
             - ✅ SHA256 checksum
             
-            ### 🔐 Security
+            ###  Security
             - No Google Play Services (100% offline)
             - TLS 1.3 with certificate pinning
             
-            ### 📋 SHA256
+            ###  SHA256
             ```
             $(cat ${{ steps.vars.outputs.zip_name }}.sha256)
             ```
