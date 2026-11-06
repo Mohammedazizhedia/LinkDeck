@@ -26,7 +26,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install Gradle 8.9 (NOT apt)
+      - name: Install Gradle 8.9
         run: |
           cd /tmp
           curl -sL -o gradle.zip https://services.gradle.org/distributions/gradle-8.9-bin.zip
@@ -50,25 +50,36 @@ jobs:
           grep -q '":core-network"' settings.gradle.kts || echo 'include(":core-network")' >> settings.gradle.kts
           cat settings.gradle.kts
 
+      - name: Update root build.gradle.kts with Compose plugin
+        run: |
+          cat > build.gradle.kts << 'GRADLE'
+          plugins {
+              id("com.android.application") version "8.2.0" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.0" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.0" apply false
+          }
+          GRADLE
+          cat build.gradle.kts
+
       - name: Reset core-design sources
         run: |
           rm -rf core-design/src/main/java
           mkdir -p core-design/src/main/java/com/linkdeck/core/design/theme
           mkdir -p core-design/src/main/java/com/linkdeck/core/design/components
 
-      - name: Write core-design build.gradle.kts
+      - name: Write core-design build.gradle.kts with Compose plugin
         run: |
           cat > core-design/build.gradle.kts << 'GRADLE'
           plugins {
               id("com.android.library")
               id("org.jetbrains.kotlin.android")
+              id("org.jetbrains.kotlin.plugin.compose")
           }
           android {
               namespace = "com.linkdeck.core.design"
               compileSdk = 34
               defaultConfig { minSdk = 26 }
               buildFeatures { compose = true }
-              composeOptions { kotlinCompilerExtensionVersion = "1.5.4" }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
                   targetCompatibility = JavaVersion.VERSION_17
@@ -76,9 +87,9 @@ jobs:
               kotlinOptions { jvmTarget = "17" }
           }
           dependencies {
-              implementation("androidx.compose.ui:ui:1.5.4")
-              implementation("androidx.compose.material3:material3:1.1.2")
-              implementation("androidx.compose.animation:animation:1.5.4")
+              implementation("androidx.compose.ui:ui:1.6.0")
+              implementation("androidx.compose.material3:material3:1.2.0")
+              implementation("androidx.compose.animation:animation:1.6.0")
           }
           GRADLE
 
