@@ -20,13 +20,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Reset to last successful commit
-        run: |
-          echo "🔄 Resetting to commit: a863614 (Mirror: fixed buttons visibility)"
-          git fetch origin
-          git reset --hard a863614
-          echo "✅ Reset complete"
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-java@v4
         with:
@@ -88,7 +83,7 @@ jobs:
 
       - name: Build app
         run: |
-          echo "🔨 Building from last successful commit..."
+          echo "🔨 Building app..."
           if [ -f "./gradlew" ]; then
               chmod +x ./gradlew
               ./gradlew :app:assembleDebug --stacktrace
@@ -138,7 +133,6 @@ jobs:
             
             ### What's New
             - ✅ New adaptive app icon (concentric rings design)
-            - 🔄 Reset to last successful commit (a863614)
             
             SHA256: $(cat ${{ env.ZIP_NAME }}.sha256 | cut -d' ' -f1)
           files: |
