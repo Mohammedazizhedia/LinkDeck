@@ -34,16 +34,11 @@ jobs:
           sudo mv gradle-8.9 /opt/gradle
           echo "/opt/gradle/bin" >> $GITHUB_PATH
 
-      - name: Create App Icon (Adaptive Icon)
+      - name: Create App Icon
         run: |
-          mkdir -p app/src/main/res/mipmap-mdpi
-          mkdir -p app/src/main/res/mipmap-hdpi
-          mkdir -p app/src/main/res/mipmap-xhdpi
-          mkdir -p app/src/main/res/mipmap-xxhdpi
-          mkdir -p app/src/main/res/mipmap-xxxhdpi
+          mkdir -p app/src/main/res/mipmap-anydpi-v26
           mkdir -p app/src/main/res/drawable
 
-          # Background color (DarkBackground #0E0B1F)
           cat > app/src/main/res/drawable/ic_launcher_background.xml << 'XML'
           <?xml version="1.0" encoding="utf-8"?>
           <shape xmlns:android="http://schemas.android.com/apk/res/android">
@@ -51,7 +46,6 @@ jobs:
           </shape>
           XML
 
-          # Foreground (concentric rings + phone/tablet icon)
           cat > app/src/main/res/drawable/ic_launcher_foreground.xml << 'XML'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
@@ -59,42 +53,21 @@ jobs:
               android:height="108dp"
               android:viewportWidth="108"
               android:viewportHeight="108">
-              <!-- Outer ring (LinkColor #B9AFFF) -->
-              <path
-                  android:fillColor="#00000000"
-                  android:strokeColor="#B9AFFF"
-                  android:strokeWidth="2"
+              <path android:fillColor="#00000000" android:strokeColor="#B9AFFF" android:strokeWidth="2"
                   android:pathData="M54,54m-38,0a38,38 0,1 1,76 0a38,38 0,1 1,-76 0"/>
-              <!-- Middle ring (Primary #5B4BD6) -->
-              <path
-                  android:fillColor="#00000000"
-                  android:strokeColor="#5B4BD6"
-                  android:strokeWidth="3"
+              <path android:fillColor="#00000000" android:strokeColor="#5B4BD6" android:strokeWidth="3"
                   android:pathData="M54,54m-28,0a28,28 0,1 1,56 0a28,28 0,1 1,-56 0"/>
-              <!-- Inner ring glow -->
-              <path
-                  android:fillColor="#00000000"
-                  android:strokeColor="#7B6FE6"
-                  android:strokeWidth="2"
+              <path android:fillColor="#00000000" android:strokeColor="#7B6FE6" android:strokeWidth="2"
                   android:pathData="M54,54m-18,0a18,18 0,1 1,36 0a18,18 0,1 1,-36 0"/>
-              <!-- Phone icon (left) -->
-              <path
-                  android:fillColor="#FFFFFF"
+              <path android:fillColor="#FFFFFF"
                   android:pathData="M42,44h8v16h-8z M43,45h6v14h-6z M45,58h2v1h-2z"/>
-              <!-- Tablet icon (right) -->
-              <path
-                  android:fillColor="#FFFFFF"
+              <path android:fillColor="#FFFFFF"
                   android:pathData="M56,42h10v20h-10z M57,43h8v18h-8z M60,61h2v1h-2z"/>
-              <!-- Connection arc -->
-              <path
-                  android:fillColor="#00000000"
-                  android:strokeColor="#FFFFFF"
-                  android:strokeWidth="1.5"
+              <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="1.5"
                   android:pathData="M50,52 Q54,48 58,52"/>
           </vector>
           XML
 
-          # Adaptive icon config
           cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml << 'XML'
           <?xml version="1.0" encoding="utf-8"?>
           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
@@ -103,20 +76,10 @@ jobs:
           </adaptive-icon>
           XML
 
-          mkdir -p app/src/main/res/mipmap-anydpi-v26
           cp app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
-
           echo "✅ App icon created"
 
-      - name: Update AndroidManifest with new icon
-        run: |
-          sed -i 's/android:icon="@mipmap\/ic_launcher"/android:icon="@mipmap\/ic_launcher"/g' app/src/main/AndroidManifest.xml
-          sed -i 's/android:roundIcon="@mipmap\/ic_launcher_round"/android:roundIcon="@mipmap\/ic_launcher_round"/g' app/src/main/AndroidManifest.xml
-          # Add if not present
-          grep -q 'android:icon=' app/src/main/AndroidManifest.xml || sed -i 's/<application/<application android:icon="@mipmap\/ic_launcher" android:roundIcon="@mipmap\/ic_launcher_round"/' app/src/main/AndroidManifest.xml
-          echo "✅ Manifest updated"
-
-      - name: Create full DesignTokens.kt
+      - name: Add DesignTokens.kt
         run: |
           mkdir -p core-design/src/main/java/com/linkdeck/core/design
           cat > core-design/src/main/java/com/linkdeck/core/design/DesignTokens.kt << 'KT'
@@ -126,49 +89,30 @@ jobs:
           import androidx.compose.ui.unit.sp
 
           object DesignTokens {
-              // Dark Theme
               val DarkBackground = Color(0xFF0E0B1F)
               val DarkSurface = Color(0xFF1A1633)
               val DarkRail = Color(0xFF141026)
               val DarkBorder = Color(0xFF2B2650)
               val DarkTile = Color(0xFF2A2455)
               val DarkTileIcon = Color(0xFFC9C2FF)
-              
-              // Light Theme
               val LightBackground = Color(0xFFF8F7F3)
               val LightSurface = Color(0xFFEFEDE6)
               val LightBorder = Color(0xFFD8D6CC)
               val LightTile = Color(0xFFE4E0F7)
               val LightTileIcon = Color(0xFF4A3FB8)
-              
-              // Common
               val Primary = Color(0xFF5B4BD6)
               val MiddleRingColor = Color(0xFF4A4290)
               val DangerBg = Color(0xFF3A1212)
               val DangerText = Color(0xFFF87171)
               val LinkColor = Color(0xFFB9AFFF)
-              
-              // Text
               val TextPrimaryDark = Color(0xFFEDEBFF)
               val TextSecondaryDark = Color(0xFFA9A4CF)
               val TextPrimaryLight = Color(0xFF1B1C1A)
               val TextSecondaryLight = Color(0xFF44463F)
-              
-              // Status
               val SuccessBg = Color(0xFF12322E)
               val SuccessText = Color(0xFF5EEAD4)
               val WarningBg = Color(0xFF3A2A10)
               val WarningText = Color(0xFFFBBF24)
-              
-              // Typography
-              val TitleFontSize = 26.sp
-              val SectionTitleFontSize = 20.sp
-              val ItemNameFontSize = 15.sp
-              val BodyFontSize = 13.sp
-              val ChipFontSize = 12.sp
-              val LabelFontSize = 11.sp
-              
-              // Shapes & Spacing
               val CardRadius = 24.dp
               val TileRadius = 15.dp
               val TileSize = 44.dp
@@ -178,9 +122,9 @@ jobs:
               val GapBetweenCards = 14.dp
           }
           KT
-          echo "✅ DesignTokens.kt created"
+          echo "✅ DesignTokens.kt added"
 
-      - name: Create Theme.kt
+      - name: Add Theme.kt
         run: |
           mkdir -p core-design/src/main/java/com/linkdeck/core/design/theme
           cat > core-design/src/main/java/com/linkdeck/core/design/theme/Theme.kt << 'KT'
@@ -242,17 +186,16 @@ jobs:
               darkTheme: Boolean = isSystemInDarkTheme(),
               content: @Composable () -> Unit
           ) {
-              val colorScheme = if (darkTheme) DarkColors else LightColors
               MaterialTheme(
-                  colorScheme = colorScheme,
+                  colorScheme = if (darkTheme) DarkColors else LightColors,
                   typography = AppTypography,
                   content = content
               )
           }
           KT
-          echo "✅ Theme.kt created"
+          echo "✅ Theme.kt added"
 
-      - name: Create Components.kt
+      - name: Add Components.kt
         run: |
           mkdir -p core-design/src/main/java/com/linkdeck/core/design/components
           cat > core-design/src/main/java/com/linkdeck/core/design/components/Components.kt << 'KT'
@@ -339,10 +282,11 @@ jobs:
               }
           }
           KT
-          echo "✅ Components.kt created"
+          echo "✅ Components.kt added"
 
       - name: Build app
         run: |
+          echo "🔨 Building with existing project config (no modifications)..."
           if [ -f "./gradlew" ]; then
               chmod +x ./gradlew
               ./gradlew :app:assembleDebug --stacktrace
@@ -388,11 +332,10 @@ jobs:
           name: LinkDeck v${{ github.event.inputs.version }} (Build #${{ github.event.inputs.build_number }})
           body: |
             ## 🎨 Phase 2 - Design System & App Icon
-            
             **Built with BFB.AI - Built For Benefits, by AI**
             
             ### What's New
-            - ✅ New adaptive app icon (concentric rings design)
+            - ✅ New adaptive app icon (concentric rings)
             - ✅ Full DesignTokens system
             - ✅ Dark/Light theme support
             - ✅ Reusable UI components
