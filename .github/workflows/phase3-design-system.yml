@@ -34,7 +34,7 @@ jobs:
           sudo mv gradle-8.9 /opt/gradle
           echo "/opt/gradle/bin" >> $GITHUB_PATH
 
-      - name: Create LinkDeckTokens.kt (NEW - Safe names)
+      - name: Create LinkDeckTokens.kt
         run: |
           mkdir -p core-design/src/main/java/com/linkdeck/core/design
           cat > core-design/src/main/java/com/linkdeck/core/design/LinkDeckTokens.kt << 'KT'
@@ -55,7 +55,7 @@ jobs:
           KT
           echo "✅ LinkDeckTokens.kt created"
 
-      - name: Create LinkDeckComponents.kt (NEW - Safe names)
+      - name: Create LinkDeckComponents.kt (FIXED)
         run: |
           mkdir -p core-design/src/main/java/com/linkdeck/core/design/components
           cat > core-design/src/main/java/com/linkdeck/core/design/components/LinkDeckComponents.kt << 'KT'
@@ -86,7 +86,8 @@ jobs:
                   colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                   elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
               ) {
-                  Column(modifier = Modifier.padding(LinkDeckTokens.CardPadding.dp), content = content)
+                  // ✅ FIXED: Removed .dp because CardPadding is already a Dp value
+                  Column(modifier = Modifier.padding(LinkDeckTokens.CardPadding), content = content)
               }
           }
 
@@ -142,11 +143,11 @@ jobs:
               }
           }
           KT
-          echo "✅ LinkDeckComponents.kt created"
+          echo "✅ LinkDeckComponents.kt created (FIXED)"
 
       - name: Build app
         run: |
-          echo "🔨 Building app with new design system..."
+          echo "🔨 Building app with corrected design system..."
           if [ -f "./gradlew" ]; then
               chmod +x ./gradlew
               ./gradlew :app:assembleDebug --stacktrace
@@ -175,7 +176,7 @@ jobs:
           Version: VERSION_PLACEHOLDER
           Build:   BUILD_PLACEHOLDER
           Date:    DATE_PLACEHOLDER
-          Phase:   3 - Design System Components
+          Phase:   3 - Design System Components (Fixed)
           ═══════════════════════════════════════════════════
           BFB
           sed -i "s/VERSION_PLACEHOLDER/$V/" out/BFB.txt
@@ -191,7 +192,7 @@ jobs:
           tag_name: v${{ github.event.inputs.version }}-build${{ github.event.inputs.build_number }}
           name: LinkDeck v${{ github.event.inputs.version }} (Build #${{ github.event.inputs.build_number }})
           body: |
-            ## 🎨 Phase 3 - Design System Components
+            ## 🎨 Phase 3 - Design System Components (Fixed)
             **Built with BFB.AI - Built For Benefits, by AI**
             
             ### What's New
