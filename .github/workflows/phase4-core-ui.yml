@@ -34,7 +34,7 @@ jobs:
           sudo mv gradle-8.9 /opt/gradle
           echo "/opt/gradle/bin" >> $GITHUB_PATH
 
-      - name: Create RoleSelectionScreen.kt
+      - name: Create RoleSelectionScreen.kt (FIXED Typography)
         run: |
           mkdir -p app/src/main/java/com/linkdeck/app/ui
           cat > app/src/main/java/com/linkdeck/app/ui/RoleSelectionScreen.kt << 'KT'
@@ -60,14 +60,16 @@ jobs:
                   horizontalAlignment = Alignment.CenterHorizontally,
                   verticalArrangement = Arrangement.Center
               ) {
+                  // ✅ FIXED: Using headlineMedium which is guaranteed to exist in Type.kt
                   Text(
                       text = "LinkDeck",
-                      style = MaterialTheme.typography.headlineLarge,
+                      style = MaterialTheme.typography.headlineMedium,
                       modifier = Modifier.padding(bottom = 8.dp)
                   )
+                  // ✅ FIXED: Using bodyMedium
                   Text(
                       text = "اختر وضع التشغيل لهذا الجهاز",
-                      style = MaterialTheme.typography.bodyLarge,
+                      style = MaterialTheme.typography.bodyMedium,
                       color = MaterialTheme.colorScheme.onSurfaceVariant,
                       textAlign = TextAlign.Center,
                       modifier = Modifier.padding(bottom = 48.dp)
@@ -97,7 +99,7 @@ jobs:
               }
           }
           KT
-          echo "✅ RoleSelectionScreen.kt created"
+          echo "✅ RoleSelectionScreen.kt created with safe typography"
 
       - name: Update MainActivity to show new screen
         run: |
@@ -105,6 +107,7 @@ jobs:
           package com.linkdeck.app
 
           import android.os.Bundle
+          import android.widget.Toast
           import androidx.activity.ComponentActivity
           import androidx.activity.compose.setContent
           import androidx.compose.foundation.layout.fillMaxSize
@@ -112,7 +115,6 @@ jobs:
           import androidx.compose.material3.Surface
           import androidx.compose.ui.Modifier
           import androidx.compose.ui.platform.LocalContext
-          import android.widget.Toast
           import com.linkdeck.app.ui.RoleSelectionScreen
           import com.linkdeck.core.design.theme.LinkDeckTheme
 
@@ -144,7 +146,7 @@ jobs:
 
       - name: Build app
         run: |
-          echo "🔨 Building app with new UI screens..."
+          echo "🔨 Building app with corrected UI screens..."
           if [ -f "./gradlew" ]; then
               chmod +x ./gradlew
               ./gradlew :app:assembleDebug --stacktrace
