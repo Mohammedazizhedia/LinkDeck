@@ -1,13 +1,9 @@
 package com.linkdeck.app
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -16,7 +12,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -63,30 +58,41 @@ fun AppNavHost(navController: NavHostController) {
     NavHost(navController = navController, startDestination = Routes.MODE) {
         composable(Routes.MODE) {
             ModeSelectionScreen(onModeChosen = {
-                navController.navigate(Routes.HOME) { popUpTo(Routes.MODE) { inclusive = true } }
+                navController.navigate(Routes.HOME) { 
+                    popUpTo(Routes.MODE) { inclusive = true } 
+                }
             })
         }
-        composable(Routes.HOME) { HomeRouter(navController) }
-        composable(Routes.DEVICES) { DevicesScreen(onBack = { navController.popBackStack() }) }
-        composable(Routes.SHOW_QR) { ShowQrScreen(onBack = { navController.popBackStack() }) }
-        composable(Routes.SCAN_QR) { ScanQrScreen(onBack = { navController.popBackStack() }) }
-        composable(Routes.PERMISSIONS) { PermissionCenterScreen(onBack = { navController.popBackStack() }) }
+        
+        composable(Routes.HOME) {
+            // 🛡️ BFB Rule: منع الخروج من التطبيق عند الضغط على زر الرجوع في الشاشة الرئيسية
+            BackHandler(enabled = true) {
+                // لا تفعل شيئاً، ابقَ في الشاشة الرئيسية
+            }
+            HomeRouter(navController)
+        }
+        
+        // 🛡️ BFB Rule: جميع الشاشات الفرعية تعود للشاشة الرئيسية (HOME) ولا تغلق التطبيق
+        composable(Routes.DEVICES) { DevicesScreen(onBack = { navController.popBackStack(Routes.HOME, false) }) }
+        composable(Routes.SHOW_QR) { ShowQrScreen(onBack = { navController.popBackStack(Routes.HOME, false) }) }
+        composable(Routes.SCAN_QR) { ScanQrScreen(onBack = { navController.popBackStack(Routes.HOME, false) }) }
+        composable(Routes.PERMISSIONS) { PermissionCenterScreen(onBack = { navController.popBackStack(Routes.HOME, false) }) }
         composable(Routes.SETTINGS) {
             SettingsScreen(
-                onBack = { navController.popBackStack() },
+                onBack = { navController.popBackStack(Routes.HOME, false) },
                 onOpenGuide = { navController.navigate(Routes.GUIDE) },
                 onOpenCustomize = { navController.navigate(Routes.CUSTOMIZE) },
             )
         }
-        composable(Routes.MIRROR) { MirrorScreen(onBack = { navController.popBackStack() }) }
-        composable(Routes.FILES) { FilesScreen(onBack = { navController.popBackStack() }) }
-        composable(Routes.NOTIFICATIONS) { NotificationsScreen(onBack = { navController.popBackStack() }) }
-        composable(Routes.MESSAGES) { MessagesScreen(onBack = { navController.popBackStack() }) }
-        composable(Routes.CALLS) { CallsScreen(onBack = { navController.popBackStack() }) }
-        composable(Routes.APPS) { AppsScreen(onBack = { navController.popBackStack() }) }
-        composable(Routes.PRO_WIZARD) { ProWizardScreen(onBack = { navController.popBackStack() }) }
-        composable(Routes.GUIDE) { BackgroundGuideScreen(onBack = { navController.popBackStack() }) }
-        composable(Routes.CUSTOMIZE) { NavigationCustomizeScreen(onBack = { navController.popBackStack() }) }
+        composable(Routes.MIRROR) { MirrorScreen(onBack = { navController.popBackStack(Routes.HOME, false) }) }
+        composable(Routes.FILES) { FilesScreen(onBack = { navController.popBackStack(Routes.HOME, false) }) }
+        composable(Routes.NOTIFICATIONS) { NotificationsScreen(onBack = { navController.popBackStack(Routes.HOME, false) }) }
+        composable(Routes.MESSAGES) { MessagesScreen(onBack = { navController.popBackStack(Routes.HOME, false) }) }
+        composable(Routes.CALLS) { CallsScreen(onBack = { navController.popBackStack(Routes.HOME, false) }) }
+        composable(Routes.APPS) { AppsScreen(onBack = { navController.popBackStack(Routes.HOME, false) }) }
+        composable(Routes.PRO_WIZARD) { ProWizardScreen(onBack = { navController.popBackStack(Routes.HOME, false) }) }
+        composable(Routes.GUIDE) { BackgroundGuideScreen(onBack = { navController.popBackStack(Routes.HOME, false) }) }
+        composable(Routes.CUSTOMIZE) { NavigationCustomizeScreen(onBack = { navController.popBackStack(Routes.HOME, false) }) }
     }
 }
 
@@ -94,9 +100,13 @@ fun AppNavHost(navController: NavHostController) {
 private fun HomeRouter(navController: NavHostController) {
     val vm: MainViewModel = androidx.hilt.navigation.compose.hiltViewModel()
     val mode by vm.settings.appMode.collectAsState()
+    
     val navigate: (String) -> Unit = { route ->
-        if (navController.currentDestination?.route != route) navController.navigate(route)
+        if (navController.currentDestination?.route != route) {
+            navController.navigate(route)
+        }
     }
+    
     when (mode) {
         AppMode.HOST -> HostHomeScreen(
             onShowQr = { navigate(Routes.SHOW_QR) },
@@ -110,11 +120,12 @@ private fun HomeRouter(navController: NavHostController) {
             onOpenPermissions = { navigate(Routes.PERMISSIONS) },
             onOpenSettings = { navigate(Routes.SETTINGS) },
         )
-        null -> ModeSelectionScreen(onModeChosen = {})
+        null -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
     }
 }
 
-/** Kept for older call-sites; all features are wired to real screens now. */
 @Composable
 fun PlaceholderScreen(titleRes: Int) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
