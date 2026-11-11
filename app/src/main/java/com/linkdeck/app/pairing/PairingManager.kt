@@ -175,7 +175,7 @@ class PairingManager @Inject constructor(
     // ✅ إضافة دالة hostAutoP2p
     fun hostAutoP2p() {
         if (_p2pCode.value != null) return
-        val p2p = P2pManager(context)
+        val p2p = P2pManager(context.applicationContext) // ✅ التعديل الوحيد هنا
         p2p.startDiscovery()
         p2p.createGroup()
         scope.launch {
