@@ -1,56 +1,47 @@
 package com.linkdeck.app.ui.home
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.linkdeck.app.R
-import com.linkdeck.app.devices.TrustedDeviceStore
-import com.linkdeck.app.pairing.PairingManager
-import com.linkdeck.app.ui.settings.FeatureCatalog
-import com.linkdeck.app.voice.VoiceCommandManager
 import com.linkdeck.core.design.LineIcon
 import com.linkdeck.core.design.LineIconView
 import com.linkdeck.core.design.LinkDeckTheme
 import com.linkdeck.core.design.Spacing
-import com.linkdeck.core.design.components.StatusChip
-import com.linkdeck.core.design.components.StatusChips
 import com.linkdeck.core.network.ConnectionManager
 import com.linkdeck.core.network.ConnectionState
+import com.linkdeck.core.network.PairingManager
+import com.linkdeck.core.network.TrustedDeviceStore
+import com.linkdeck.core.network.VoiceCommandManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-private data class RailEntry(val route: String, val icon: LineIcon, val labelRes: Int)
+@HiltViewModel
+class ControllerHomeViewModel @Inject constructor(
+    val trustedStore: TrustedDeviceStore,
+    val connectionManager: ConnectionManager,
+    val pairingManager: PairingManager,
+    val voice: VoiceCommandManager,
+) : ViewModel() {
+    init {
+        // ✅ تفعيل P2P تلقائياً عند دخول الشاشة
+        viewModelScope.launch {
+            connectionManager.startDiscovery()
+        }
+    }
+}
 
-/**
- * CONTROLLER (tablet) shell: navigation rail (right side under RTL), connection
- * summary, and quick access to pairing. Rail items follow FeatureCatalog order.
- */
 @Composable
 fun ControllerHomeScreen(
     onScanQr: () -> Unit,
@@ -58,48 +49,11 @@ fun ControllerHomeScreen(
     onOpenPermissions: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    Row(Modifier.fillMaxSize()) {
-        // Under RTL layout direction the rail is laid out from the right edge.
-        val context = LocalContext.current
-        NavigationRail {
-            FeatureCatalog.visible(context)
-                .map { RailEntry(it.id, it.icon, it.labelRes) }
-                .forEach { entry ->
-                    NavigationRailItem(
-                        selected = false,
-                        onClick = { onNavigate(entry.route) },
-                        icon = {
-                            LineIconView(
-                                icon = entry.icon,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                size = 24.dp,
-                            )
-                        },
-                        label = { Text(stringResource(entry.labelRes), style = MaterialTheme.typography.labelSmall) },
-                    )
-                }
-        }
-        Column(Modifier.weight(1f)) {
-            ControllerHomeContent(
-                onScanQr = onScanQr,
-                onOpenPermissions = onOpenPermissions,
-            )
-            VoiceFab(onRoute = onNavigate)
-        }
-    }
-}
-
-@Composable
-private fun ControllerHomeContent(
-    onScanQr: () -> Unit,
-    onOpenPermissions: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
     val vm: ControllerHomeViewModel = hiltViewModel()
     val devices by vm.trustedStore.devices.collectAsState()
     val connectionState by vm.connectionManager.state.collectAsState()
 
-    Column(modifier.fillMaxSize().padding(Spacing.xxl)) {
+    Column(Modifier.fillMaxSize().padding(Spacing.xxl)) {
         Text(stringResource(R.string.controller_title), style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(Spacing.sm))
         ConnectionStatusLine(state = connectionState)
@@ -173,35 +127,5 @@ private fun ConnectionStatusLine(state: ConnectionState) {
             MaterialTheme.colorScheme.surfaceVariant,
             fg,
         )
-    }
-}
-
-@HiltViewModel
-class ControllerHomeViewModel @Inject constructor(
-    val trustedStore: TrustedDeviceStore,
-    val connectionManager: ConnectionManager,
-    val pairingManager: PairingManager,
-    val voice: VoiceCommandManager,
-) : ViewModel()
-
-@Composable
-private fun VoiceFab(onRoute: (String) -> Unit) {
-    val vm: ControllerHomeViewModel = hiltViewModel()
-    val state by vm.voice.state.collectAsState()
-    Box(Modifier.padding(Spacing.xl)) {
-        Button(onClick = {
-            val lang = java.util.Locale.getDefault().language.take(2).ifBlank { "en" }
-            vm.voice.ensureModelAndStart(lang, onRoute)
-        }) {
-            Text(
-                when (state) {
-                    is VoiceCommandManager.VoiceState.Downloading ->
-                        stringResource(R.string.voice_download)
-                    VoiceCommandManager.VoiceState.Listening ->
-                        stringResource(R.string.voice_listening)
-                    else -> stringResource(R.string.voice_start)
-                }
-            )
-        }
     }
 }
