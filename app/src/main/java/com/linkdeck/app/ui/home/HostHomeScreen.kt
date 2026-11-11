@@ -3,7 +3,6 @@ package com.linkdeck.app.ui.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -11,10 +10,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import com.linkdeck.app.R
 import com.linkdeck.core.design.LineIcon
 import com.linkdeck.core.design.LineIconView
@@ -22,23 +19,16 @@ import com.linkdeck.core.design.LinkDeckTheme
 import com.linkdeck.core.design.Spacing
 import com.linkdeck.core.network.HostServer
 import com.linkdeck.core.network.PairingManager
+import com.linkdeck.core.network.ConnectionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class HostHomeViewModel @Inject constructor(
     val pairingManager: PairingManager,
     val hostServer: HostServer,
-    val connectionManager: com.linkdeck.core.network.ConnectionManager,
-) : ViewModel() {
-    init {
-        // ✅ تفعيل P2P تلقائياً عند دخول الشاشة
-        viewModelScope.launch {
-            hostServer.start()
-        }
-    }
-}
+    val connectionManager: ConnectionManager,
+) : ViewModel()
 
 @Composable
 fun HostHomeScreen(
