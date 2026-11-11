@@ -57,6 +57,11 @@ class PairingManager @Inject constructor(
     val hostQr: StateFlow<HostQrState> = _hostQr
     private val discovery = NsdDiscovery(nsdManager, scope)
     val discovered: StateFlow<List<DiscoveredDevice>> = discovery.devices
+
+    // ✅ إضافة P2P State
+    private val _p2pCode = MutableStateFlow<String?>(null)
+    val p2pCode: StateFlow<String?> = _p2pCode
+
     fun hostStart() {
         if (!hostServer.isRunning) {
             hostServer.start()
@@ -166,6 +171,22 @@ class PairingManager @Inject constructor(
         hostStart()
         return hostServer.newP2pCode()
     }
+
+    // ✅ إضافة دالة hostAutoP2p
+    fun hostAutoP2p() {
+        if (_p2pCode.value != null) return
+        val p2p = P2pManager(context)
+        p2p.startDiscovery()
+        p2p.createGroup()
+        scope.launch {
+            p2p.connectionInfo.collect { info ->
+                if (info?.isGroupOwner == true && _p2pCode.value == null) {
+                    _p2pCode.value = hostStartP2p()
+                }
+            }
+        }
+    }
+
     suspend fun pairOverP2p(ip: String, port: Int, code: String): Result<TrustedDevice> = withContext(Dispatchers.IO) {
         runCatching {
             val trustAll = object : javax.net.ssl.X509TrustManager {
@@ -224,6 +245,7 @@ class PairingManager @Inject constructor(
             },
         )
     }
+    
     fun startDiscovery() = discovery.start()
     fun stopDiscovery() = discovery.stop()
     fun connectTo(device: TrustedDevice) = connectionManager.connect(device)
