@@ -59,12 +59,15 @@ fun AppNavHost(navController: NavHostController) {
         composable(Routes.MODE) {
             ModeSelectionScreen(onModeChosen = {
                 navController.navigate(Routes.HOME) { 
-                    popUpTo(Routes.MODE) { inclusive = false } 
+                    popUpTo(Routes.MODE) { inclusive = true } 
                 }
             })
         }
         
         composable(Routes.HOME) {
+            BackHandler(enabled = true) {
+                navController.popBackStack(Routes.MODE, inclusive = false)
+            }
             HomeRouter(navController)
         }
         
@@ -93,20 +96,11 @@ fun AppNavHost(navController: NavHostController) {
 
 @Composable
 private fun HomeRouter(navController: NavHostController) {
-    // ✅ الحل السحري: زر الرجوع في النظام (سواء زر في التابلت أو السحب من الحافة) هيرجعك للصفحة الأولى
-    BackHandler(enabled = true) {
-        navController.popBackStack(Routes.MODE, inclusive = false)
-    }
-
     val vm: MainViewModel = androidx.hilt.navigation.compose.hiltViewModel()
     val mode by vm.settings.appMode.collectAsState()
-    
     val navigate: (String) -> Unit = { route ->
-        if (navController.currentDestination?.route != route) {
-            navController.navigate(route)
-        }
+        if (navController.currentDestination?.route != route) navController.navigate(route)
     }
-    
     when (mode) {
         AppMode.HOST -> HostHomeScreen(
             onShowQr = { navigate(Routes.SHOW_QR) },
@@ -129,10 +123,6 @@ private fun HomeRouter(navController: NavHostController) {
 @Composable
 fun PlaceholderScreen(titleRes: Int) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = stringResource(titleRes),
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Text(text = stringResource(titleRes), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
