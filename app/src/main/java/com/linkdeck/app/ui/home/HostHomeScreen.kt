@@ -1,57 +1,45 @@
 package com.linkdeck.app.ui.home
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.linkdeck.app.R
-import com.linkdeck.app.pairing.PairingManager
 import com.linkdeck.core.design.LineIcon
 import com.linkdeck.core.design.LineIconView
 import com.linkdeck.core.design.LinkDeckTheme
 import com.linkdeck.core.design.Spacing
-import com.linkdeck.core.network.ConnectionManager
 import com.linkdeck.core.network.HostServer
+import com.linkdeck.core.network.PairingManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class HostHomeViewModel @Inject constructor(
     val pairingManager: PairingManager,
     val hostServer: HostServer,
-    val connectionManager: ConnectionManager,
-) : ViewModel()
+    val connectionManager: com.linkdeck.core.network.ConnectionManager,
+) : ViewModel() {
+    init {
+        // ✅ تفعيل P2P تلقائياً عند دخول الشاشة
+        viewModelScope.launch {
+            hostServer.start()
+        }
+    }
+}
 
-/**
- * HOST (phone) home: big connection circle, Show QR, trusted controllers,
- * Pause/Disconnect, and the always-visible "being controlled" pill.
- */
 @Composable
 fun HostHomeScreen(
     onShowQr: () -> Unit,
@@ -69,7 +57,6 @@ fun HostHomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(Spacing.xxl))
-            // Connection circle
             Box(contentAlignment = Alignment.Center) {
                 Surface(
                     shape = CircleShape,
@@ -113,8 +100,6 @@ fun HostHomeScreen(
             )
             Spacer(Modifier.height(Spacing.sm))
             LazyColumn(Modifier.fillMaxWidth()) {
-                // Host-side paired controller list is surfaced in Phase 3;
-                // the count badge below reflects live sessions instead.
                 item {
                     Text(
                         text = stringResource(R.string.host_controllers_hint, vm.hostServer.pairedDeviceIds().size),
@@ -125,7 +110,6 @@ fun HostHomeScreen(
             }
         }
 
-        // Floating "being controlled" pill with red dot + emergency disconnect.
         if (beingControlled) {
             Surface(
                 color = MaterialTheme.colorScheme.surface,
