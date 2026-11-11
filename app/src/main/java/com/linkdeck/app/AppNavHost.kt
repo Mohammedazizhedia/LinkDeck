@@ -1,5 +1,6 @@
 package com.linkdeck.app
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -58,20 +59,13 @@ fun AppNavHost(navController: NavHostController) {
         composable(Routes.MODE) {
             ModeSelectionScreen(onModeChosen = {
                 navController.navigate(Routes.HOME) { 
-                    popUpTo(Routes.MODE) { inclusive = true } 
+                    popUpTo(Routes.MODE) { inclusive = false } 
                 }
             })
         }
         
         composable(Routes.HOME) {
-            HomeRouter(
-                navController = navController,
-                onBackToMode = {
-                    navController.navigate(Routes.MODE) {
-                        popUpTo(Routes.HOME) { inclusive = true }
-                    }
-                }
-            )
+            HomeRouter(navController)
         }
         
         composable(Routes.DEVICES) { DevicesScreen(onBack = { navController.popBackStack() }) }
@@ -98,10 +92,12 @@ fun AppNavHost(navController: NavHostController) {
 }
 
 @Composable
-private fun HomeRouter(
-    navController: NavHostController,
-    onBackToMode: () -> Unit
-) {
+private fun HomeRouter(navController: NavHostController) {
+    // ✅ الحل السحري: زر الرجوع في النظام (سواء زر في التابلت أو السحب من الحافة) هيرجعك للصفحة الأولى
+    BackHandler(enabled = true) {
+        navController.popBackStack(Routes.MODE, inclusive = false)
+    }
+
     val vm: MainViewModel = androidx.hilt.navigation.compose.hiltViewModel()
     val mode by vm.settings.appMode.collectAsState()
     
@@ -117,14 +113,12 @@ private fun HomeRouter(
             onOpenProWizard = { navigate(Routes.PRO_WIZARD) },
             onOpenPermissions = { navigate(Routes.PERMISSIONS) },
             onOpenSettings = { navigate(Routes.SETTINGS) },
-            onBackToMode = onBackToMode,
         )
         AppMode.CONTROLLER -> ControllerHomeScreen(
             onScanQr = { navigate(Routes.SCAN_QR) },
             onNavigate = navigate,
             onOpenPermissions = { navigate(Routes.PERMISSIONS) },
             onOpenSettings = { navigate(Routes.SETTINGS) },
-            onBackToMode = onBackToMode,
         )
         null -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
