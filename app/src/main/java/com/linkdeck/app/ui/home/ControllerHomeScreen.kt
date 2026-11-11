@@ -12,15 +12,14 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import com.linkdeck.app.R
+import com.linkdeck.app.pairing.PairingManager // ✅ تصليح المسار
 import com.linkdeck.core.design.LineIcon
 import com.linkdeck.core.design.LineIconView
 import com.linkdeck.core.design.LinkDeckTheme
 import com.linkdeck.core.design.Spacing
 import com.linkdeck.core.network.ConnectionManager
 import com.linkdeck.core.network.ConnectionState
-import com.linkdeck.core.network.PairingManager
 import com.linkdeck.core.network.TrustedDeviceStore
-import com.linkdeck.core.network.VoiceCommandManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 
@@ -29,7 +28,6 @@ class ControllerHomeViewModel @Inject constructor(
     val trustedStore: TrustedDeviceStore,
     val connectionManager: ConnectionManager,
     val pairingManager: PairingManager,
-    val voice: VoiceCommandManager,
 ) : ViewModel()
 
 @Composable
