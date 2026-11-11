@@ -18,7 +18,7 @@ import com.linkdeck.core.design.LineIconView
 import com.linkdeck.core.design.LinkDeckTheme
 import com.linkdeck.core.design.Spacing
 import com.linkdeck.core.network.HostServer
-import com.linkdeck.app.pairing.PairingManager // ✅ تم تصليح المسار هنا
+import com.linkdeck.app.pairing.PairingManager
 import com.linkdeck.core.network.ConnectionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -40,7 +40,6 @@ fun HostHomeScreen(
     val vm: HostHomeViewModel = hiltViewModel()
     val hostEvent by vm.hostServer.events.collectAsState()
     val beingControlled = vm.hostServer.connectedCount > 0
-    val p2pCode by vm.pairingManager.p2pCode.collectAsState() // ✅ مراقبة الكود
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -73,21 +72,6 @@ fun HostHomeScreen(
                 vm.pairingManager.hostStart()
                 onShowQr()
             }) { Text(stringResource(R.string.show_qr)) }
-
-            // ✅ زرار الـ P2P والكود
-            Spacer(Modifier.height(Spacing.sm))
-            if (p2pCode != null) {
-                Text(
-                    text = "كود الاقتران: $p2pCode",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = LinkDeckTheme.tints.accentFg,
-                    modifier = Modifier.padding(vertical = Spacing.md)
-                )
-            }
-            OutlinedButton(onClick = { vm.pairingManager.hostAutoP2p() }) { 
-                Text("تشغيل Wi-Fi Direct") 
-            }
-            // -----------------
 
             Spacer(Modifier.height(Spacing.sm))
             OutlinedButton(onClick = onOpenProWizard) { Text(stringResource(R.string.pro_title)) }
