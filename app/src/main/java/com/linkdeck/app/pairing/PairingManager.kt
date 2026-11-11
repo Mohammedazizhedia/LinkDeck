@@ -172,20 +172,6 @@ class PairingManager @Inject constructor(
         return hostServer.newP2pCode()
     }
 
-    // ✅ إضافة دالة hostAutoP2p
-    fun hostAutoP2p() {
-        if (_p2pCode.value != null) return
-        val p2p = P2pManager(context.applicationContext) // ✅ التعديل الوحيد هنا
-        p2p.startDiscovery()
-        p2p.createGroup()
-        scope.launch {
-            p2p.connectionInfo.collect { info ->
-                if (info?.isGroupOwner == true && _p2pCode.value == null) {
-                    _p2pCode.value = hostStartP2p()
-                }
-            }
-        }
-    }
 
     suspend fun pairOverP2p(ip: String, port: Int, code: String): Result<TrustedDevice> = withContext(Dispatchers.IO) {
         runCatching {
