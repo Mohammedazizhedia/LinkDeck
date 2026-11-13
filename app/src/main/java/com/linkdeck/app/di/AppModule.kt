@@ -5,7 +5,6 @@ import android.net.nsd.NsdManager
 import com.linkdeck.app.devices.TrustedDeviceStore
 import com.linkdeck.app.pairing.PairingManager
 import com.linkdeck.core.network.ConnectionManager
-import com.linkdeck.core.network.FileTransferManager
 import com.linkdeck.core.network.HostServer
 import com.linkdeck.core.network.NsdDiscovery
 import com.linkdeck.core.network.TlsIdentity
@@ -29,15 +28,7 @@ object AppModule {
         return CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 
-    @Provides
-    @Singleton
-    fun provideHostServer(
-        identity: TlsIdentity,
-        fileTransferManager: FileTransferManager,
-        scope: CoroutineScope
-    ): HostServer {
-        return HostServer(identity, fileTransferManager, scope)
-    }
+    // تم حذف provideHostServer لأنه موجود بالفعل في NetworkModule
 
     @Provides
     @Singleton
