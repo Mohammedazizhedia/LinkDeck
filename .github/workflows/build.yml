@@ -23,32 +23,20 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.9'
-
-      # ✅ تعديل اسم الـ APK عشان يطلع LinkDeck_v1.0_build#XXX.apk
-      - name: Rename APK
-        run: |
-          # البحث عن ملف الـ APK وتغيير اسمه
-          find app/build/outputs/apk/debug -name "*.apk" -exec bash -c 'mv "$1" "app/build/outputs/apk/debug/LinkDeck_v1.0_build#${GITHUB_RUN_NUMBER}.apk"' _ {} \;
           
+      # 1. البناء الأول
       - name: Build Debug APK
         run: gradle :app:assembleDebug
-        
+
+      # 2. تسمية الـ APK
+      - name: Rename APK
+        run: |
+          mkdir -p app/build/outputs/apk/debug/
+          mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/LinkDeck_${{ github.run_number }}.apk || true
+
+      # 3. رفع الـ APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: LinkDeck_Build_${{ github.run_number }}
+          name: LinkDeck_APK_${{ github.run_number }}
           path: app/build/outputs/apk/debug/*.apk
-
-      # ✅ إضافة ملف BFB.txt جوه الـ Artifact (لو عايزه يتحط جوه ZIP)
-      - name: Create BFB Archive
-        run: |
-          mkdir -p release_archive
-          cp app/build/outputs/apk/debug/*.apk release_archive/
-          cp BFB.txt release_archive/
-          cd release_archive && zip -r ../LinkDeck_v1.0_build#${GITHUB_RUN_NUMBER}.zip *
-          
-      - name: Upload ZIP (with BFB.txt)
-        uses: actions/upload-artifact@v4
-        with:
-          name: LinkDeck_Archive_${{ github.run_number }}
-          path: LinkDeck_v1.0_build#*.zip
