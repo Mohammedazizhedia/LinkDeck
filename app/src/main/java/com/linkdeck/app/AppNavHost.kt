@@ -65,6 +65,7 @@ fun AppNavHost(navController: NavHostController) {
         }
         
         composable(Routes.HOME) {
+            // الرجوع لشاشة اختيار الوضع
             BackHandler(enabled = true) {
                 navController.popBackStack(Routes.MODE, inclusive = false)
             }
