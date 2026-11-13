@@ -34,7 +34,7 @@ class ModeSelectionViewModel @Inject constructor(
 ) : ViewModel() {
     fun setMode(mode: AppMode, onDone: () -> Unit) {
         viewModelScope.launch {
-            settings.appMode.set(mode)
+            settings.setAppMode(mode) // ✅ التعديل هنا: استخدمنا الدالة setAppMode بدل appMode.set
             onDone()
         }
     }
