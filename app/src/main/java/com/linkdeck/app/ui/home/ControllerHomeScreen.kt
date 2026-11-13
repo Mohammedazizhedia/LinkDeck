@@ -36,7 +36,7 @@ fun ControllerHomeScreen(
     onNavigate: (String) -> Unit,
     onOpenPermissions: () -> Unit,
     onOpenSettings: () -> Unit,
-    onBack: () -> Unit // ✅ استقبال الرجوع
+    onBack: () -> Unit // ✅
 ) {
     val vm: ControllerHomeViewModel = hiltViewModel()
     val connectionState by vm.connectionManager.state.collectAsState()
@@ -45,10 +45,7 @@ fun ControllerHomeScreen(
         // ✅ زرار الرجوع
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back"
-                )
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
             Text(stringResource(R.string.controller_title), style = MaterialTheme.typography.headlineSmall)
         }
