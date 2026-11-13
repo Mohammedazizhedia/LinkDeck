@@ -10,16 +10,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import com.linkdeck.app.R
+import com.linkdeck.app.pairing.PairingManager
 import com.linkdeck.core.design.LineIcon
 import com.linkdeck.core.design.LineIconView
 import com.linkdeck.core.design.LinkDeckTheme
 import com.linkdeck.core.design.Spacing
-import com.linkdeck.core.network.HostServer
-import com.linkdeck.app.pairing.PairingManager
 import com.linkdeck.core.network.ConnectionManager
+import com.linkdeck.core.network.HostServer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 
