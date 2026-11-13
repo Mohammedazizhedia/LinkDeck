@@ -1,30 +1,10 @@
 package com.linkdeck.app.ui.mirror
 
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -41,11 +21,6 @@ import com.linkdeck.core.design.LineIcon
 import com.linkdeck.core.design.LineIconView
 import com.linkdeck.core.design.Spacing
 
-/**
- * CONTROLLER mirror screen. Normal mode = JPEG frames with tap injection
- * through the host accessibility service. The toolbar auto-hides in a later
- * polish pass; every control here works in Normal mode today.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MirrorScreen(onBack: () -> Unit) {
@@ -66,9 +41,26 @@ fun MirrorScreen(onBack: () -> Unit) {
             )
         },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(Spacing.xl), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+        Column(
+            Modifier.fillMaxSize().padding(padding).padding(Spacing.xl),
+            verticalArrangement = Arrangement.spacedBy(Spacing.md)
+        ) {
+            // ✅ أزرار التحكم (بدء/إيقاف) تم نقلها للأعلى
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                if (active) {
+                    Button(onClick = vm::stopMirror, modifier = Modifier.weight(1f)) { 
+                        Text(stringResource(R.string.mirror_stop)) 
+                    }
+                } else {
+                    Button(onClick = vm::startMirror, modifier = Modifier.weight(1f)) { 
+                        Text(stringResource(R.string.mirror_start)) 
+                    }
+                }
+            }
+
+            // شاشة العرض
             Box(
-                Modifier.fillMaxWidth().aspectRatio(9f / 16f),
+                Modifier.fillMaxWidth().weight(1f),
                 contentAlignment = Alignment.Center,
             ) {
                 Surface(
@@ -85,7 +77,6 @@ fun MirrorScreen(onBack: () -> Unit) {
                             contentDescription = stringResource(R.string.feature_mirror),
                             contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxSize().clickable {
-                                // Tap passthrough (normalized coordinates).
                                 vm.tap(0.5f, 0.5f)
                             },
                         )
@@ -94,14 +85,11 @@ fun MirrorScreen(onBack: () -> Unit) {
                 }
             }
 
+            // أزرار أندرويد (رجوع، هوم، إلخ)
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                OutlinedButton(onClick = { vm.key("back") }) { Text(stringResource(R.string.key_back)) }
-                OutlinedButton(onClick = { vm.key("home") }) { Text(stringResource(R.string.key_home)) }
-                OutlinedButton(onClick = { vm.key("recents") }) { Text(stringResource(R.string.key_recents)) }
-            }
-            Row {
-                if (active) TextButton(onClick = vm::stopMirror) { Text(stringResource(R.string.mirror_stop)) }
-                else Button(onClick = vm::startMirror) { Text(stringResource(R.string.mirror_start)) }
+                OutlinedButton(onClick = { vm.key("back") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.key_back)) }
+                OutlinedButton(onClick = { vm.key("home") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.key_home)) }
+                OutlinedButton(onClick = { vm.key("recents") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.key_recents)) }
             }
         }
     }
