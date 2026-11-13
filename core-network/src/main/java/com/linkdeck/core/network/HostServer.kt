@@ -33,6 +33,10 @@ class HostServer(
     @Volatile private var qrTokenExpiresAt: Long = 0L
     private val deviceTokens = ConcurrentHashMap<String, String>()
     private val sessions = ConcurrentHashMap<String, DefaultWebSocketServerSession>()
+    
+    // إدارة نقل الملفات
+    val fileTransferManager = FileTransferManager(scope)
+
     @Volatile
     var commandHandler: ((String) -> String?)? = null
     @Volatile
@@ -176,6 +180,7 @@ class HostServer(
         val env = runCatching {
             kotlinx.serialization.json.Json.decodeFromString(Envelope.serializer(), text)
         }.getOrNull() ?: return
+        
         when (env.type) {
             "file_list" -> {
                 val req = runCatching {
@@ -202,6 +207,47 @@ class HostServer(
             }
             "file_thumb" -> reply(deviceId, env.id, "file_thumb_res",
                 kotlinx.serialization.json.Json.encodeToString(FileChunkRes.serializer(), HostFileOps.thumbnail(env.payload)))
+            
+            // ---- File Transfer Protocol (Task 2.1) ----
+            "file_transfer_init" -> {
+                val req = runCatching {
+                    kotlinx.serialization.json.Json.decodeFromString(FileTransferInitReq.serializer(), env.payload)
+                }.getOrNull() ?: return
+                // التحقق من الملف الموجود لاستئناف النقل
+                val file = java.io.File(HostFileOps.getRootPath(), req.path)
+                val resumeOffset = if (file.exists()) {
+                    file.length()
+                } else {
+                    0L
+                }
+                val res = FileTransferInitRes(ok = true, resumeOffset = resumeOffset)
+                reply(deviceId, env.id, "file_transfer_init_res",
+                    kotlinx.serialization.json.Json.encodeToString(FileTransferInitRes.serializer(), res))
+            }
+            "file_transfer_chunk" -> {
+                val req = runCatching {
+                    kotlinx.serialization.json.Json.decodeFromString(FileTransferChunkReq.serializer(), env.payload)
+                }.getOrNull() ?: return
+                // في هذا الإصدار، نستخدم writeChunk من HostFileOps
+                val writeRes = HostFileOps.writeChunk(req.path, req.offset, req.dataBase64)
+                val res = if (writeRes.ok) {
+                    FileTransferChunkRes(ok = true, received = writeRes.size)
+                } else {
+                    FileTransferChunkRes(ok = false, received = 0, error = writeRes.error)
+                }
+                reply(deviceId, env.id, "file_transfer_chunk_res",
+                    kotlinx.serialization.json.Json.encodeToString(FileTransferChunkRes.serializer(), res))
+            }
+            "file_transfer_cancel" -> {
+                val req = runCatching {
+                    kotlinx.serialization.json.Json.decodeFromString(FileTransferCancelReq.serializer(), env.payload)
+                }.getOrNull() ?: return
+                // إلغاء النقل (لو كنا بنستخدم FileTransferManager)
+                val res = FileTransferCancelRes(ok = true)
+                reply(deviceId, env.id, "file_transfer_cancel_res",
+                    kotlinx.serialization.json.Json.encodeToString(FileTransferCancelRes.serializer(), res))
+            }
+
             "cmd" -> {
                 val payload = HostBridge.commandHandler?.invoke(env.payload)
                     ?: kotlinx.serialization.json.Json.encodeToString(CmdRes.serializer(), CmdRes(false, error = "host_busy"))
