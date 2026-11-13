@@ -2,6 +2,7 @@ package com.linkdeck.app.ui.settings
 
 import android.content.ComponentName
 import android.content.pm.PackageManager
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,11 +34,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.linkdeck.app.BuildConfig
 import com.linkdeck.app.MainViewModel
 import com.linkdeck.app.R
 import com.linkdeck.app.settings.AppLanguage
@@ -148,7 +152,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenGuide: () -> Unit = {}, onOpenCusto
                 )
             }
 
-                        SectionTitle(stringResource(R.string.settings_font))
+            SectionTitle(stringResource(R.string.settings_font))
             AppFont.entries.forEach { f ->
                 SelectRow(
                     label = stringResource(when (f) {
@@ -204,7 +208,33 @@ fun SettingsScreen(onBack: () -> Unit, onOpenGuide: () -> Unit = {}, onOpenCusto
             SelectRow(label = stringResource(R.string.nav_customize_title), selected = false, onClick = onOpenCustomize)
             SelectRow(label = stringResource(R.string.guide_title), selected = false, onClick = onOpenGuide)
 
+            // ✅ توقيع BFB.AI (القسم 16)
+            Spacer(Modifier.height(Spacing.xxl))
+            SectionTitle("حول التطبيق (About)")
+            Column(
+                Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+            ) {
+                Text(
+                    "LinkDeck v${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    "Built with BFB.AI",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    "Built For Benefits, by AI\nصُنع لأجل المنفعة، بواسطة الذكاء الاصطناعي",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
             Spacer(Modifier.height(Spacing.sm))
+
             OutlinedButton(
                 onClick = {
                     vm.settings.resetToDefaults()
