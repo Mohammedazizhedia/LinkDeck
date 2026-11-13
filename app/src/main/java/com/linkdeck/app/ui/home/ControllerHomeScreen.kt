@@ -36,13 +36,12 @@ fun ControllerHomeScreen(
     onNavigate: (String) -> Unit,
     onOpenPermissions: () -> Unit,
     onOpenSettings: () -> Unit,
-    onBack: () -> Unit // ✅
+    onBack: () -> Unit
 ) {
     val vm: ControllerHomeViewModel = hiltViewModel()
     val connectionState by vm.connectionManager.state.collectAsState()
 
     Column(Modifier.fillMaxSize().padding(Spacing.xxl)) {
-        // ✅ زرار الرجوع
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -60,33 +59,31 @@ fun ControllerHomeScreen(
         
         Spacer(Modifier.height(Spacing.xxl))
 
-        // ✅ أزرار الوظائف
-        if (connectionState is ConnectionState.Connected) {
-            Text("الوظائف المتاحة", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(Spacing.md))
-            
-            val features = listOf(
-                "Mirror" to "mirror",
-                "Files" to "files",
-                "Notifications" to "notifications",
-                "Messages" to "messages",
-                "Calls" to "calls",
-                "Apps" to "apps"
-            )
-            
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.md),
-                verticalArrangement = Arrangement.spacedBy(Spacing.md)
-            ) {
-                items(features) { (label, route) ->
-                    OutlinedButton(
-                        onClick = { onNavigate(route) },
-                        modifier = Modifier.fillMaxWidth().height(60.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(label)
-                    }
+        // ✅ الأزرار ظاهرة دايماً للتجربة
+        Text("الوظائف المتاحة", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(Spacing.md))
+        
+        val features = listOf(
+            "Mirror" to "mirror",
+            "Files" to "files",
+            "Notifications" to "notifications",
+            "Messages" to "messages",
+            "Calls" to "calls",
+            "Apps" to "apps"
+        )
+        
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+            verticalArrangement = Arrangement.spacedBy(Spacing.md)
+        ) {
+            items(features) { (label, route) ->
+                OutlinedButton(
+                    onClick = { onNavigate(route) },
+                    modifier = Modifier.fillMaxWidth().height(60.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(label)
                 }
             }
         }
