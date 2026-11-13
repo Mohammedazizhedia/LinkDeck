@@ -1,13 +1,13 @@
 package com.linkdeck.app.di
 
 import android.content.Context
+import android.net.nsd.NsdManager
 import com.linkdeck.app.devices.TrustedDeviceStore
 import com.linkdeck.app.pairing.PairingManager
 import com.linkdeck.core.network.ConnectionManager
 import com.linkdeck.core.network.FileTransferManager
 import com.linkdeck.core.network.HostServer
 import com.linkdeck.core.network.NsdDiscovery
-import android.net.nsd.NsdManager
 import com.linkdeck.core.network.TlsIdentity
 import dagger.Module
 import dagger.Provides
@@ -42,11 +42,9 @@ object AppModule {
     @Provides
     @Singleton
     fun provideConnectionManager(
-        @ApplicationContext context: Context,
-        tlsIdentity: TlsIdentity,
         scope: CoroutineScope
     ): ConnectionManager {
-        return ConnectionManager(context, tlsIdentity, scope)
+        return ConnectionManager(scope)
     }
 
     @Provides
