@@ -7,7 +7,7 @@ import com.linkdeck.core.network.ConnectionManager
 import com.linkdeck.core.network.FileTransferManager
 import com.linkdeck.core.network.HostServer
 import com.linkdeck.core.network.NsdDiscovery
-import com.linkdeck.core.network.NsdManager
+import android.net.nsd.NsdManager
 import com.linkdeck.core.network.TlsIdentity
 import dagger.Module
 import dagger.Provides
