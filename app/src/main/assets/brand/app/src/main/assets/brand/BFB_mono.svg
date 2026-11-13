@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 160" width="480" height="160" role="img" aria-label="BFB.AI - Built For Benefits, by AI">
+  <title>BFB.AI - Built For Benefits, by AI</title>
+  <text x="240" y="88" text-anchor="middle" font-family="Inter, 'IBM Plex Sans', Cairo, Helvetica, Arial, sans-serif" font-size="68" font-weight="800" letter-spacing="2" fill="currentColor">BFB<tspan fill="currentColor">.AI</tspan></text>
+  <rect x="150" y="104" width="180" height="3" rx="1.5" fill="currentColor"/>
+  <text x="240" y="134" text-anchor="middle" font-family="Inter, 'IBM Plex Sans', Cairo, Helvetica, Arial, sans-serif" font-size="17" font-weight="500" letter-spacing="1.5" fill="currentColor">Built For Benefits, by AI</text>
+</svg>
