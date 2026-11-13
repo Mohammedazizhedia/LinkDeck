@@ -65,8 +65,9 @@ fun AppNavHost(navController: NavHostController) {
         }
         
         composable(Routes.HOME) {
+            // BackHandler الافتراضي
             BackHandler(enabled = true) {
-                navController.popBackStack(Routes.MODE, inclusive = false)
+                navController.popBackStack()
             }
             HomeRouter(navController)
         }
@@ -101,20 +102,28 @@ private fun HomeRouter(navController: NavHostController) {
     val navigate: (String) -> Unit = { route ->
         if (navController.currentDestination?.route != route) navController.navigate(route)
     }
+    
+    // دالة موحدة للرجوع لشاشة اختيار الوضع
+    val backToMode: () -> Unit = {
+        navController.navigate(Routes.MODE) {
+            popUpTo(navController.graph.id) { inclusive = true }
+        }
+    }
+
     when (mode) {
         AppMode.HOST -> HostHomeScreen(
             onShowQr = { navigate(Routes.SHOW_QR) },
             onOpenProWizard = { navigate(Routes.PRO_WIZARD) },
             onOpenPermissions = { navigate(Routes.PERMISSIONS) },
             onOpenSettings = { navigate(Routes.SETTINGS) },
-            onBack = { navController.popBackStack(Routes.MODE, inclusive = false) } // ✅
+            onBack = backToMode // ✅ الرجوع هنا
         )
         AppMode.CONTROLLER -> ControllerHomeScreen(
             onScanQr = { navigate(Routes.SCAN_QR) },
             onNavigate = navigate,
             onOpenPermissions = { navigate(Routes.PERMISSIONS) },
             onOpenSettings = { navigate(Routes.SETTINGS) },
-            onBack = { navController.popBackStack(Routes.MODE, inclusive = false) } // ✅
+            onBack = backToMode // ✅ الرجوع هنا
         )
         null -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
