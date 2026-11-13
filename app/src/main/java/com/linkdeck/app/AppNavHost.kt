@@ -107,13 +107,14 @@ private fun HomeRouter(navController: NavHostController) {
             onOpenProWizard = { navigate(Routes.PRO_WIZARD) },
             onOpenPermissions = { navigate(Routes.PERMISSIONS) },
             onOpenSettings = { navigate(Routes.SETTINGS) },
+            onBack = { navController.popBackStack(Routes.MODE, inclusive = false) } // ✅
         )
         AppMode.CONTROLLER -> ControllerHomeScreen(
             onScanQr = { navigate(Routes.SCAN_QR) },
             onNavigate = navigate,
             onOpenPermissions = { navigate(Routes.PERMISSIONS) },
             onOpenSettings = { navigate(Routes.SETTINGS) },
-            onBack = { navController.popBackStack(Routes.MODE, inclusive = false) } // ✅ إضافة الرجوع
+            onBack = { navController.popBackStack(Routes.MODE, inclusive = false) } // ✅
         )
         null -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
