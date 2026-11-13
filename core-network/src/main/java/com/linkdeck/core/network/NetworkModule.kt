@@ -15,4 +15,13 @@ object NetworkModule {
     fun provideFileTransferManager(): FileTransferManager {
         return FileTransferManager()
     }
+
+    @Provides
+    @Singleton
+    fun provideHostServer(
+        identity: TlsIdentity,
+        fileTransferManager: FileTransferManager
+    ): HostServer {
+        return HostServer(identity, fileTransferManager)
+    }
 }
