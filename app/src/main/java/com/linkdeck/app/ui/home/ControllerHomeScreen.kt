@@ -1,20 +1,14 @@
 package com.linkdeck.app.ui.home
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import com.linkdeck.app.R
 import com.linkdeck.app.pairing.PairingManager
-import com.linkdeck.core.design.LineIcon
-import com.linkdeck.core.design.LineIconView
 import com.linkdeck.core.design.LinkDeckTheme
 import com.linkdeck.core.design.Spacing
 import com.linkdeck.core.network.ConnectionManager
@@ -54,16 +48,17 @@ fun ControllerHomeScreen(
 
 @Composable
 private fun ConnectionStatusLine(state: ConnectionState) {
-    val (text, fg) = when (state) {
+    val (text, color) = when (state) {
         ConnectionState.Disconnected -> stringResource(R.string.state_disconnected) to MaterialTheme.colorScheme.onSurfaceVariant
         ConnectionState.Connecting -> stringResource(R.string.state_connecting) to LinkDeckTheme.tints.warningFg
         is ConnectionState.Connected -> stringResource(R.string.state_connected) to LinkDeckTheme.tints.successFg
         is ConnectionState.Error -> stringResource(R.string.state_error) to LinkDeckTheme.tints.dangerFg
     }
-    when (state) {
-        is ConnectionState.Connected -> StatusChips.Success(text)
-        ConnectionState.Connecting -> StatusChips.Warning(text)
-        is ConnectionState.Error -> StatusChips.Danger(text)
-        ConnectionState.Disconnected -> StatusChip(text, MaterialTheme.colorScheme.surfaceVariant, fg)
-    }
+    
+    Text(
+        text = text,
+        color = color,
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier.padding(vertical = Spacing.xs)
+    )
 }
