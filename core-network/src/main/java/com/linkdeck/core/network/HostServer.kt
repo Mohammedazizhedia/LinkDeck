@@ -27,7 +27,7 @@ sealed interface HostEvent {
 
 class HostServer(
     private val identity: TlsIdentity,
-    private val fileTransferManager: FileTransferManager, // ✅ تم التعديل هنا
+    private val fileTransferManager: FileTransferManager, // ✅ مستلمة من الـ Hilt
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
     private var server: ApplicationEngine? = null
@@ -38,6 +38,9 @@ class HostServer(
     @Volatile private var qrTokenExpiresAt: Long = 0L
     private val deviceTokens = ConcurrentHashMap<String, String>()
     private val sessions = ConcurrentHashMap<String, DefaultWebSocketServerSession>()
+
+    // ❌ شيلنا السطر ده خلاص:
+    // val fileTransferManager = FileTransferManager(scope)
 
     @Volatile
     var commandHandler: ((String) -> String?)? = null
