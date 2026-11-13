@@ -65,7 +65,11 @@ android {
         }
     }
 
-    buildFeatures { compose = true }
+    // ✅ التعديل هنا: ضفنا buildConfig = true
+    buildFeatures { 
+        compose = true 
+        buildConfig = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
