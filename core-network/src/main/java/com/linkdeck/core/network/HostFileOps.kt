@@ -21,6 +21,8 @@ object HostFileOps {
 
     private fun root(): File = Environment.getExternalStorageDirectory()
 
+    fun getRootPath(): String = root().absolutePath // ✅ السطر اللي إحنا ضفناه
+
     /** Canonical path inside external storage, or null if the path escapes. */
     private fun resolve(path: String): File? = runCatching {
         val r = root().canonicalFile
