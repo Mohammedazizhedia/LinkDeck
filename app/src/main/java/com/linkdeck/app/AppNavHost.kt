@@ -65,7 +65,6 @@ fun AppNavHost(navController: NavHostController) {
         }
         
         composable(Routes.HOME) {
-            // الرجوع لشاشة اختيار الوضع
             BackHandler(enabled = true) {
                 navController.popBackStack(Routes.MODE, inclusive = false)
             }
@@ -114,6 +113,7 @@ private fun HomeRouter(navController: NavHostController) {
             onNavigate = navigate,
             onOpenPermissions = { navigate(Routes.PERMISSIONS) },
             onOpenSettings = { navigate(Routes.SETTINGS) },
+            onBack = { navController.popBackStack(Routes.MODE, inclusive = false) } // ✅ إضافة الرجوع
         )
         null -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
