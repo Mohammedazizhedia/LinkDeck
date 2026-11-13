@@ -22,8 +22,9 @@ android {
         applicationId = "com.linkdeck.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0-phase1"
+        // ✅ رقم الإصدار التلقائي (من GitHub Actions)
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionName = "1.0.${versionCode}"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -53,6 +54,14 @@ android {
             if (keystorePropertiesFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }
+        }
+    }
+
+    // ✅ اسم ملف الـ APK المميز (LinkDeck-v1.0.X.apk)
+    applicationVariants.all {
+        outputs.all {
+            (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName =
+                "LinkDeck-v${versionName}.apk"
         }
     }
 
