@@ -5,6 +5,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,17 +36,27 @@ fun ControllerHomeScreen(
     onNavigate: (String) -> Unit,
     onOpenPermissions: () -> Unit,
     onOpenSettings: () -> Unit,
+    onBack: () -> Unit // ✅ ضفنا باراميتر الرجوع
 ) {
     val vm: ControllerHomeViewModel = hiltViewModel()
     val connectionState by vm.connectionManager.state.collectAsState()
 
     Column(Modifier.fillMaxSize().padding(Spacing.xxl)) {
-        Text(stringResource(R.string.controller_title), style = MaterialTheme.typography.headlineSmall)
+        // ✅ شريط علوي فيه زرار الرجوع والعنوان
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back"
+                )
+            }
+            Text(stringResource(R.string.controller_title), style = MaterialTheme.typography.headlineSmall)
+        }
+        
         Spacer(Modifier.height(Spacing.sm))
         ConnectionStatusLine(state = connectionState)
         Spacer(Modifier.height(Spacing.xl))
 
-        // زرار المسح والإعدادات
         Button(onClick = onScanQr) { Text(stringResource(R.string.scan_qr)) }
         Spacer(Modifier.height(Spacing.sm))
         TextButton(onClick = onOpenPermissions) { Text(stringResource(R.string.permissions)) }
