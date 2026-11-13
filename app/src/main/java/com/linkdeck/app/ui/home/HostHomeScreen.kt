@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +20,7 @@ import com.linkdeck.core.design.LineIconView
 import com.linkdeck.core.design.LinkDeckTheme
 import com.linkdeck.core.design.Spacing
 import com.linkdeck.core.network.ConnectionManager
+import com.linkdeck.core.network.HostEvent
 import com.linkdeck.core.network.HostServer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -39,24 +38,45 @@ fun HostHomeScreen(
     onOpenProWizard: () -> Unit,
     onOpenPermissions: () -> Unit,
     onOpenSettings: () -> Unit,
-    onBack: () -> Unit // ✅
 ) {
     val vm: HostHomeViewModel = hiltViewModel()
     val hostEvent by vm.hostServer.events.collectAsState()
     val beingControlled = vm.hostServer.connectedCount > 0
+
+    // ✅ متغير عشان نعرض رسالة الموافقة
+    var pendingRequest by remember { mutableStateOf<HostEvent.ConnectionRequest?>(null) }
+
+    // ✅ مراقبة الأحداث الجديدة
+    LaunchedEffect(hostEvent) {
+        if (hostEvent is HostEvent.ConnectionRequest) {
+            pendingRequest = hostEvent as HostEvent.ConnectionRequest
+        }
+    }
+
+    // ✅ رسالة الموافقة
+    pendingRequest?.let { request ->
+        AlertDialog(
+            onDismissRequest = { pendingRequest = null },
+            title = { Text("طلب اتصال") },
+            text = { Text("هل تسمح للجهاز '${request.deviceName}' بالاتصال؟") },
+            confirmButton = {
+                TextButton(onClick = {
+                    // الموافقة: هنبعت رسالة للتابلت (بس الكود ده محتاج يتنفذ في HostServer)
+                    // مؤقتاً: هنقفل الرسالة
+                    pendingRequest = null
+                }) { Text("موافق") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRequest = null }) { Text("رفض") }
+            }
+        )
+    }
 
     Box(Modifier.fillMaxSize()) {
         Column(
             Modifier.fillMaxSize().padding(Spacing.xxl),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // ✅ زرار الرجوع
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                }
-            }
-
             Spacer(Modifier.height(Spacing.xxl))
             Box(contentAlignment = Alignment.Center) {
                 Surface(
