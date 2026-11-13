@@ -1,9 +1,8 @@
 package com.linkdeck.app.ui.home
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -21,6 +20,8 @@ import com.linkdeck.core.design.LinkDeckTheme
 import com.linkdeck.core.design.Spacing
 import com.linkdeck.core.network.ConnectionManager
 import com.linkdeck.core.network.ConnectionState
+import com.linkdeck.core.network.DiscoveredDevice
+import com.linkdeck.core.network.NsdDiscovery
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 
@@ -28,6 +29,7 @@ import javax.inject.Inject
 class ControllerHomeViewModel @Inject constructor(
     val connectionManager: ConnectionManager,
     val pairingManager: PairingManager,
+    val nsdDiscovery: NsdDiscovery,
 ) : ViewModel()
 
 @Composable
@@ -40,6 +42,12 @@ fun ControllerHomeScreen(
 ) {
     val vm: ControllerHomeViewModel = hiltViewModel()
     val connectionState by vm.connectionManager.state.collectAsState()
+    val discoveredDevices by vm.nsdDiscovery.devices.collectAsState()
+
+    // ✅ بدء الاكتشاف التلقائي بمجرد فتح الشاشة
+    LaunchedEffect(Unit) {
+        vm.nsdDiscovery.start()
+    }
 
     Column(Modifier.fillMaxSize().padding(Spacing.xxl)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -56,36 +64,38 @@ fun ControllerHomeScreen(
         Button(onClick = onScanQr) { Text(stringResource(R.string.scan_qr)) }
         Spacer(Modifier.height(Spacing.sm))
         TextButton(onClick = onOpenPermissions) { Text(stringResource(R.string.permissions)) }
-        
-        Spacer(Modifier.height(Spacing.xxl))
 
-        // ✅ الأزرار ظاهرة دايماً للتجربة
-        Text("الوظائف المتاحة", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(Spacing.md))
-        
-        val features = listOf(
-            "Mirror" to "mirror",
-            "Files" to "files",
-            "Notifications" to "notifications",
-            "Messages" to "messages",
-            "Calls" to "calls",
-            "Apps" to "apps"
-        )
-        
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.md),
-            verticalArrangement = Arrangement.spacedBy(Spacing.md)
-        ) {
-            items(features) { (label, route) ->
-                OutlinedButton(
-                    onClick = { onNavigate(route) },
-                    modifier = Modifier.fillMaxWidth().height(60.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(label)
+        Spacer(Modifier.height(Spacing.lg))
+
+        // ✅ عرض الأجهزة المكتشفة
+        if (discoveredDevices.isNotEmpty()) {
+            Text("الأجهزة المكتشفة:", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(Spacing.sm))
+            LazyColumn {
+                items(discoveredDevices) { device ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        Row(
+                            Modifier.padding(Spacing.md),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(device.name, modifier = Modifier.weight(1f))
+                            Button(onClick = {
+                                // الاتصال بالجهاز (هيتم إرسال AuthMessage)
+                                // للأسف الاتصال التلقائي محتاج token، فهنستخدم التوكن المخزن أو نطلب QR
+                                // مؤقتاً: هنبعت أمر اتصال مباشر لو الجهاز ده متسجل
+                            }) {
+                                Text("اتصال")
+                            }
+                        }
+                    }
                 }
             }
+        } else {
+            Text("جاري البحث عن أجهزة...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
