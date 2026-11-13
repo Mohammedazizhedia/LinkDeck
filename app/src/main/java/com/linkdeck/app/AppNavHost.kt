@@ -102,13 +102,6 @@ private fun HomeRouter(navController: NavHostController) {
     val navigate: (String) -> Unit = { route ->
         if (navController.currentDestination?.route != route) navController.navigate(route)
     }
-    
-    // دالة موحدة للرجوع لشاشة اختيار الوضع
-    val backToMode: () -> Unit = {
-        navController.navigate(Routes.MODE) {
-            popUpTo(navController.graph.id) { inclusive = true }
-        }
-    }
 
     when (mode) {
         AppMode.HOST -> HostHomeScreen(
@@ -116,14 +109,14 @@ private fun HomeRouter(navController: NavHostController) {
             onOpenProWizard = { navigate(Routes.PRO_WIZARD) },
             onOpenPermissions = { navigate(Routes.PERMISSIONS) },
             onOpenSettings = { navigate(Routes.SETTINGS) },
-            onBack = backToMode // ✅ الرجوع هنا
+            // ❌ شلنا onBack عشان الملف مش بيستقبلها
         )
         AppMode.CONTROLLER -> ControllerHomeScreen(
             onScanQr = { navigate(Routes.SCAN_QR) },
             onNavigate = navigate,
             onOpenPermissions = { navigate(Routes.PERMISSIONS) },
             onOpenSettings = { navigate(Routes.SETTINGS) },
-            onBack = backToMode // ✅ الرجوع هنا
+            // ❌ شلنا onBack عشان الملف مش بيستقبلها
         )
         null -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
