@@ -32,7 +32,7 @@ data class FileChunkReq(val path: String, val offset: Long = 0, val length: Int 
 @Serializable
 data class FileChunkRes(
     val ok: Boolean,
-    val size: Long = -1,          // for reads: total file size; for writes: resulting length
+    val size: Long = -1,
     val dataBase64: String = "",
     val error: String = "",
 )
@@ -46,6 +46,44 @@ data class FileStatRes(
     val isDir: Boolean = false,
     val error: String = "",
 )
+
+// ---- file transfer (Task 2.1) ----
+@Serializable
+data class FileTransferInitReq(
+    val transferId: String,
+    val path: String,
+    val totalSize: Long,
+    val sha256: String,
+)
+
+@Serializable
+data class FileTransferInitRes(
+    val ok: Boolean,
+    val resumeOffset: Long = 0L,
+    val error: String = "",
+)
+
+@Serializable
+data class FileTransferChunkReq(
+    val transferId: String,
+    val path: String,
+    val offset: Long,
+    val dataBase64: String,
+    val chunkSha256: String,
+)
+
+@Serializable
+data class FileTransferChunkRes(
+    val ok: Boolean,
+    val received: Long,
+    val error: String = "",
+)
+
+@Serializable
+data class FileTransferCancelReq(val transferId: String, val reason: String = "")
+
+@Serializable
+data class FileTransferCancelRes(val ok: Boolean, val error: String = "")
 
 // ---- generic host command (status, sms, contacts, apps, calls, clipboard...) ----
 @Serializable
