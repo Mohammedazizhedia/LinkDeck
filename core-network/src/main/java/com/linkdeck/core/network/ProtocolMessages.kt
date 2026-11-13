@@ -1,127 +1,302 @@
 package com.linkdeck.core.network
 
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
+import io.ktor.serialization.kotlinx.json.*
+import io.ktor.server.application.*
+import io.ktor.server.engine.*
+import io.ktor.server.netty.*
+import io.ktor.server.plugins.contentnegotiation.*
+import io.ktor.server.response.*
+import io.ktor.server.routing.*
+import io.ktor.server.websocket.*
+import io.ktor.websocket.*
+import java.net.ServerSocket
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.random.Random
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 
-/** Shared JSON protocol over the pinned-TLS WebSocket (single channel, id-routed). */
-val ProtoJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+sealed interface HostEvent {
+    data class ControllerConnected(val deviceId: String) : HostEvent
+    data class ControllerDisconnected(val deviceId: String) : HostEvent
+}
 
-@Serializable
-data class Envelope(val id: Long = 0, val type: String, val payload: String = "{}")
+class HostServer(
+    private val identity: TlsIdentity,
+    private val fileTransferManager: FileTransferManager,
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+) {
+    private var server: ApplicationEngine? = null
+    private val _events = MutableStateFlow<HostEvent?>(null)
+    val events: StateFlow<HostEvent?> = _events
 
-// ---- files ----
-@Serializable
-data class FileEntry(
-    val name: String,
-    val path: String,
-    val isDir: Boolean,
-    val size: Long,
-    val modified: Long,
-    val mime: String = "",
-)
+    @Volatile private var qrToken: String? = null
+    @Volatile private var qrTokenExpiresAt: Long = 0L
+    private val deviceTokens = ConcurrentHashMap<String, String>()
+    private val sessions = ConcurrentHashMap<String, DefaultWebSocketServerSession>()
 
-@Serializable
-data class FileListReq(val path: String, val query: String = "")
+    @Volatile
+    var commandHandler: ((String) -> String?)? = null
 
-@Serializable
-data class FileListRes(val ok: Boolean, val entries: List<FileEntry> = emptyList(), val error: String = "")
+    @Volatile
+    private var p2pCode: String? = null
 
-@Serializable
-data class FileChunkReq(val path: String, val offset: Long = 0, val length: Int = 0, val dataBase64: String = "")
+    fun newP2pCode(): String {
+        val code = (100000..999999).random().toString()
+        p2pCode = code
+        return code
+    }
 
-@Serializable
-data class FileChunkRes(
-    val ok: Boolean,
-    val size: Long = -1,
-    val dataBase64: String = "",
-    val error: String = "",
-)
+    private fun isP2pCodeValid(code: String): Boolean = p2pCode != null && p2pCode == code
 
-@Serializable
-data class FileStatRes(
-    val ok: Boolean,
-    val size: Long = -1,
-    val mime: String = "",
-    val modified: Long = 0,
-    val isDir: Boolean = false,
-    val error: String = "",
-)
+    @Volatile
+    var boundPort: Int = -1
+        private set
 
-// ---- file transfer (Task 2.1) ----
-@Serializable
-data class FileTransferInitReq(
-    val transferId: String,
-    val path: String,
-    val totalSize: Long,
-    val sha256: String,
-)
+    val connectedCount: Int get() = sessions.size
+    val isRunning: Boolean get() = server != null
 
-@Serializable
-data class FileTransferInitRes(
-    val ok: Boolean,
-    val resumeOffset: Long = 0L,
-    val error: String = "",
-)
+    fun newPairingToken(validityMillis: Long = 120_000L): String {
+        val token = UUID.randomUUID().toString().replace("-", "")
+        qrToken = token
+        qrTokenExpiresAt = System.currentTimeMillis() + validityMillis
+        return token
+    }
 
-@Serializable
-data class FileTransferChunkReq(
-    val transferId: String,
-    val path: String,
-    val offset: Long,
-    val dataBase64: String,
-    val chunkSha256: String,
-)
+    fun isQrTokenValid(token: String): Boolean {
+        val t = qrToken ?: return false
+        return t == token && System.currentTimeMillis() < qrTokenExpiresAt
+    }
 
-@Serializable
-data class FileTransferChunkRes(
-    val ok: Boolean,
-    val received: Long,
-    val error: String = "",
-)
+    fun pairedDeviceIds(): Set<String> = deviceTokens.keys.toSet()
 
-@Serializable
-data class FileTransferCancelReq(val transferId: String, val reason: String = "")
+    fun revokeDevice(deviceId: String) {
+        deviceTokens.remove(deviceId)
+        sessions.remove(deviceId)?.let { s -> scope.launch { runCatching { s.close() } } }
+    }
 
-@Serializable
-data class FileTransferCancelRes(val ok: Boolean, val error: String = "")
+    fun start(): Int {
+        check(server == null) { "HostServer already started" }
+        val port = findFreePort()
+        val environment = applicationEngineEnvironment {
+            sslConnector(
+                keyStore = identity.keyStore,
+                keyAlias = TlsIdentity.KEY_ALIAS,
+                keyStorePassword = { identity.password.toCharArray() },
+                privateKeyPassword = { identity.password.toCharArray() },
+            ) {
+                host = "0.0.0.0"
+                this.port = port
+            }
+            module { appModule() }
+        }
+        val engine = embeddedServer(Netty, environment)
+        server = engine
+        engine.start(wait = false)
+        boundPort = port
+        DebugLog.log("Host", "server started on port $boundPort")
+        return boundPort
+    }
 
-// ---- generic host command (status, sms, contacts, apps, calls, clipboard...) ----
-@Serializable
-data class CmdReq(val cmd: String, val argsJson: String = "{}")
+    private fun Application.appModule() {
+        install(ContentNegotiation) { json() }
+        install(WebSockets)
+        routing {
+            get("/ping") { call.respondText("linkdeck-ok") }
+            webSocket("/ws") {
+                try {
+                    val deviceId = authenticate() ?: return@webSocket
+                    sessions[deviceId] = this
+                    _events.value = HostEvent.ControllerConnected(deviceId)
+                    try {
+                        for (frame in incoming) {
+                            when (frame) {
+                                is Frame.Text -> handleText(deviceId, frame.readText())
+                                else -> Unit
+                            }
+                        }
+                    } finally {
+                        sessions.remove(deviceId)
+                        _events.value = HostEvent.ControllerDisconnected(deviceId)
+                    }
+                } catch (t: Throwable) {
+                    DebugLog.log("Host", "ws error: ${'$'}{t.javaClass.simpleName}: ${'$'}{t.message}")
+                    runCatching {
+                        send(Frame.Text("{\"type\":\"auth_error\",\"reason\":\"server:" + t.javaClass.simpleName + ":" + (t.message ?: "").take(120) + "\"}"))
+                    }
+                    runCatching { close() }
+                }
+            }
+        }
+    }
 
-@Serializable
-data class CmdRes(val ok: Boolean, val resultJson: String = "", val error: String = "")
+    private suspend fun DefaultWebSocketServerSession.authenticate(): String? {
+        val first = incoming.receive() as? Frame.Text ?: return reject("no auth frame")
+        val raw = first.readText()
+        val auth = runCatching {
+            kotlinx.serialization.json.Json.decodeFromString<AuthMessage>(raw)
+        }.getOrNull()
 
-// ---- pushes (host -> controllers) ----
-@Serializable
-data class NotifPush(
-    val key: String,
-    val packageName: String,
-    val title: String,
-    val text: String,
-    val whenMs: Long,
-    val canReply: Boolean = false,
-)
+        if (auth == null) {
+            val p2p = runCatching {
+                kotlinx.serialization.json.Json.decodeFromString(P2pPair.serializer(), raw)
+            }.getOrNull()
+            if (p2p != null && isP2pCodeValid(p2p.code)) {
+                p2pCode = null
+                val deviceId = UUID.randomUUID().toString().replace("-", "")
+                val deviceToken = UUID.randomUUID().toString().replace("-", "")
+                deviceTokens[deviceId] = deviceToken
+                val payload = kotlinx.serialization.json.Json.encodeToString(
+                    P2pAuthOk.serializer(),
+                    P2pAuthOk(deviceId = deviceId, deviceToken = deviceToken, fingerprint = identity.certificateFingerprint),
+                )
+                val env = kotlinx.serialization.json.Json.encodeToString(
+                    Envelope.serializer(), Envelope(0, "p2p_auth_ok", payload),
+                )
+                send(Frame.Text(env))
+                DebugLog.log("Host", "p2p pairing OK device=$deviceId")
+                return deviceId
+            }
+            return reject("malformed auth")
+        }
 
-@Serializable
-data class NotifDismissPush(val key: String)
+        DebugLog.log("Host", "auth attempt token=${auth.token.take(10)} valid=${isQrTokenValid(auth.token)}")
+        val deviceId = UUID.randomUUID().toString().replace("-", "")
+        return when {
+            isQrTokenValid(auth.token) -> {
+                qrToken = null
+                val deviceToken = UUID.randomUUID().toString().replace("-", "")
+                deviceTokens[deviceId] = deviceToken
+                send(Frame.Text(kotlinx.serialization.json.Json.encodeToString(AuthOk.serializer(), AuthOk(deviceId = deviceId, deviceToken = deviceToken))))
+                DebugLog.log("Host", "pairing OK device=$deviceId")
+                deviceId
+            }
+            deviceTokens.entries.firstOrNull { it.value == auth.token } != null -> {
+                val knownId = deviceTokens.entries.first { it.value == auth.token }.key
+                send(Frame.Text(kotlinx.serialization.json.Json.encodeToString(AuthOk.serializer(), AuthOk(deviceId = knownId, deviceToken = auth.token))))
+                knownId
+            }
+            else -> reject("invalid or expired token")
+        }
+    }
 
-@Serializable
-data class ClipPush(val text: String)
+    private suspend fun DefaultWebSocketServerSession.reject(reason: String): String? {
+        send(Frame.Text(kotlinx.serialization.json.Json.encodeToString(AuthError.serializer(), AuthError(reason = reason))))
+        close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, reason))
+        return null
+    }
 
-/** Normal-mode mirror: JPEG frames over the control channel (fallback for Pro mode). */
-@Serializable
-data class FramePush(val width: Int, val height: Int, val dataBase64: String)
+    private fun handleText(deviceId: String, text: String) {
+        if (text.contains("\"ping\"")) {
+            scope.launch { runCatching { sessions[deviceId]?.send(Frame.Text(text)) } }
+            return
+        }
+        val env = runCatching {
+            kotlinx.serialization.json.Json.decodeFromString(Envelope.serializer(), text)
+        }.getOrNull() ?: return
 
-/** Generic host event (call state, battery, etc.). */
-@Serializable
-data class EventPush(val kind: String, val dataJson: String = "{}")
+        when (env.type) {
+            "file_list" -> {
+                val req = runCatching {
+                    kotlinx.serialization.json.Json.decodeFromString(FileListReq.serializer(), env.payload)
+                }.getOrNull() ?: return
+                reply(deviceId, env.id, "file_list_res",
+                    kotlinx.serialization.json.Json.encodeToString(FileListRes.serializer(), HostFileOps.list(req.path, req.query)))
+            }
+            "file_stat" -> reply(deviceId, env.id, "file_stat_res",
+                kotlinx.serialization.json.Json.encodeToString(FileStatRes.serializer(), HostFileOps.stat(env.payload)))
+            "file_read" -> {
+                val req = runCatching {
+                    kotlinx.serialization.json.Json.decodeFromString(FileChunkReq.serializer(), env.payload)
+                }.getOrNull() ?: return
+                reply(deviceId, env.id, "file_read_res",
+                    kotlinx.serialization.json.Json.encodeToString(FileChunkRes.serializer(), HostFileOps.readChunk(req.path, req.offset, req.length)))
+            }
+            "file_write" -> {
+                val req = runCatching {
+                    kotlinx.serialization.json.Json.decodeFromString(FileChunkReq.serializer(), env.payload)
+                }.getOrNull() ?: return
+                reply(deviceId, env.id, "file_write_res",
+                    kotlinx.serialization.json.Json.encodeToString(FileChunkRes.serializer(), HostFileOps.writeChunk(req.path, req.offset, req.dataBase64)))
+            }
+            "file_thumb" -> reply(deviceId, env.id, "file_thumb_res",
+                kotlinx.serialization.json.Json.encodeToString(FileChunkRes.serializer(), HostFileOps.thumbnail(env.payload)))
+            
+            // ---- File Transfer Protocol (Task 2.1) ----
+            "file_transfer_init" -> {
+                val req = runCatching {
+                    kotlinx.serialization.json.Json.decodeFromString(FileTransferInitReq.serializer(), env.payload)
+                }.getOrNull() ?: return
+                val file = java.io.File(HostFileOps.getRootPath(), req.path)
+                val resumeOffset = if (file.exists()) file.length() else 0L
+                val res = FileTransferInitRes(ok = true, resumeOffset = resumeOffset)
+                reply(deviceId, env.id, "file_transfer_init_res",
+                    kotlinx.serialization.json.Json.encodeToString(FileTransferInitRes.serializer(), res))
+            }
+            "file_transfer_chunk" -> {
+                val req = runCatching {
+                    kotlinx.serialization.json.Json.decodeFromString(FileTransferChunkReq.serializer(), env.payload)
+                }.getOrNull() ?: return
+                val writeRes = HostFileOps.writeChunk(req.path, req.offset, req.dataBase64)
+                val res = if (writeRes.ok) {
+                    FileTransferChunkRes(ok = true, received = writeRes.size)
+                } else {
+                    FileTransferChunkRes(ok = false, received = 0, error = writeRes.error)
+                }
+                reply(deviceId, env.id, "file_transfer_chunk_res",
+                    kotlinx.serialization.json.Json.encodeToString(FileTransferChunkRes.serializer(), res))
+            }
+            "file_transfer_cancel" -> {
+                val req = runCatching {
+                    kotlinx.serialization.json.Json.decodeFromString(FileTransferCancelReq.serializer(), env.payload)
+                }.getOrNull() ?: return
+                val res = FileTransferCancelRes(ok = true)
+                reply(deviceId, env.id, "file_transfer_cancel_res",
+                    kotlinx.serialization.json.Json.encodeToString(FileTransferCancelRes.serializer(), res))
+            }
 
-/** Static bridge so non-Hilt components (listener/accessibility/widget) reach the host server. */
-object HostBridge {
-    @Volatile var hostServer: HostServer? = null
-    @Volatile var commandHandler: ((String) -> String?)? = null
-    @Volatile var notificationListener: Any? = null
-    @Volatile var accessibilityService: Any? = null
-    @Volatile var proManager: Any? = null
+            "cmd" -> {
+                val payload = HostBridge.commandHandler?.invoke(env.payload)
+                    ?: kotlinx.serialization.json.Json.encodeToString(CmdRes.serializer(), CmdRes(false, error = "host_busy"))
+                reply(deviceId, env.id, "cmd_res", payload)
+            }
+            else -> Unit
+        }
+    }
+
+    private fun reply(deviceId: String, id: Long, type: String, payload: String) {
+        val msg = runCatching {
+            kotlinx.serialization.json.Json.encodeToString(Envelope.serializer(), Envelope(id, type, payload))
+        }.getOrNull() ?: return
+        scope.launch { runCatching { sessions[deviceId]?.send(Frame.Text(msg)) } }
+    }
+
+    fun broadcast(type: String, payloadJson: String) {
+        val msg = runCatching {
+            kotlinx.serialization.json.Json.encodeToString(Envelope.serializer(), Envelope(0, type, payloadJson))
+        }.getOrNull() ?: return
+        scope.launch {
+            sessions.values.forEach { runCatching { it.send(Frame.Text(msg)) } }
+        }
+    }
+
+    fun stop() {
+        server?.let { runCatching { it.stop(500L, 1500L) } }
+        server = null
+        boundPort = -1
+        sessions.clear()
+    }
+
+    private fun findFreePort(): Int {
+        runCatching { ServerSocket(P2P_PORT).use { return P2P_PORT } }
+        for (attempt in 0 until 20) {
+            val candidate = 28000 + Random.nextInt(0, 20000)
+            runCatching { ServerSocket(candidate).use { return candidate } }
+        }
+        return ServerSocket(0).use { it.localPort }
+    }
 }
