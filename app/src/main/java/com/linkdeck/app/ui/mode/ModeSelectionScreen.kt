@@ -19,9 +19,32 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.linkdeck.app.settings.AppMode
+import com.linkdeck.app.settings.SettingsStore
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import kotlinx.coroutines.launch
+
+@HiltViewModel
+class ModeSelectionViewModel @Inject constructor(
+    val settings: SettingsStore
+) : ViewModel() {
+    fun setMode(mode: AppMode, onDone: () -> Unit) {
+        viewModelScope.launch {
+            settings.appMode.set(mode)
+            onDone()
+        }
+    }
+}
 
 @Composable
-fun ModeSelectionScreen(onModeChosen: () -> Unit) {
+fun ModeSelectionScreen(
+    onModeChosen: () -> Unit,
+    vm: ModeSelectionViewModel = hiltViewModel()
+) {
     val infiniteTransition = rememberInfiniteTransition(label = "orb")
     val scale by infiniteTransition.animateFloat(
         initialValue = 1f, targetValue = 1.05f,
@@ -40,7 +63,6 @@ fun ModeSelectionScreen(onModeChosen: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        // Glowing Orb with accessibility description
         Box(
             modifier = Modifier
                 .size(200.dp)
@@ -88,9 +110,9 @@ fun ModeSelectionScreen(onModeChosen: () -> Unit) {
         
         Spacer(modifier = Modifier.height(16.dp))
         
-        // Host Button with accessibility
+        // زرار Host
         Button(
-            onClick = onModeChosen,
+            onClick = { vm.setMode(AppMode.HOST, onModeChosen) },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(64.dp)
@@ -106,9 +128,9 @@ fun ModeSelectionScreen(onModeChosen: () -> Unit) {
             )
         }
         
-        // Controller Button with accessibility
+        // زرار Controller
         OutlinedButton(
-            onClick = onModeChosen,
+            onClick = { vm.setMode(AppMode.CONTROLLER, onModeChosen) },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(64.dp)
