@@ -65,7 +65,6 @@ fun AppNavHost(navController: NavHostController) {
         }
         
         composable(Routes.HOME) {
-            // BackHandler الافتراضي
             BackHandler(enabled = true) {
                 navController.popBackStack()
             }
@@ -103,20 +102,27 @@ private fun HomeRouter(navController: NavHostController) {
         if (navController.currentDestination?.route != route) navController.navigate(route)
     }
 
+    // ✅ دالة موحدة للرجوع
+    val backToMode: () -> Unit = {
+        navController.navigate(Routes.MODE) {
+            popUpTo(navController.graph.id) { inclusive = true }
+        }
+    }
+
     when (mode) {
         AppMode.HOST -> HostHomeScreen(
             onShowQr = { navigate(Routes.SHOW_QR) },
             onOpenProWizard = { navigate(Routes.PRO_WIZARD) },
             onOpenPermissions = { navigate(Routes.PERMISSIONS) },
             onOpenSettings = { navigate(Routes.SETTINGS) },
-            // ❌ شلنا onBack عشان الملف مش بيستقبلها
+            onBack = backToMode // ✅ بعتنا onBack
         )
         AppMode.CONTROLLER -> ControllerHomeScreen(
             onScanQr = { navigate(Routes.SCAN_QR) },
             onNavigate = navigate,
             onOpenPermissions = { navigate(Routes.PERMISSIONS) },
             onOpenSettings = { navigate(Routes.SETTINGS) },
-            // ❌ شلنا onBack عشان الملف مش بيستقبلها
+            onBack = backToMode // ✅ بعتنا onBack
         )
         null -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
