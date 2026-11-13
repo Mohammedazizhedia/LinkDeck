@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
@@ -34,7 +35,7 @@ class ModeSelectionViewModel @Inject constructor(
 ) : ViewModel() {
     fun setMode(mode: AppMode, onDone: () -> Unit) {
         viewModelScope.launch {
-            settings.setAppMode(mode) // ✅ استخدام الدالة الصح
+            settings.setAppMode(mode)
             onDone()
         }
     }
@@ -55,95 +56,107 @@ fun ModeSelectionScreen(
         label = "scale"
     )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF0E0B1F))
-            .padding(horizontal = 32.dp, vertical = 48.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(24.dp)
-    ) {
-        Box(
+    Box(Modifier.fillMaxSize().background(Color(0xFF0E0B1F))) {
+        Column(
             modifier = Modifier
-                .size(200.dp)
-                .semantics { contentDescription = "LinkDeck logo animation" },
-            contentAlignment = Alignment.Center
+                .fillMaxSize()
+                .padding(horizontal = 32.dp, vertical = 48.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            Box(modifier = Modifier.size(200.dp).border(1.dp, Color(0xFF2B2650), CircleShape))
-            Box(modifier = Modifier.size(150.dp).border(1.dp, Color(0xFF4A4290), CircleShape))
+            Spacer(Modifier.weight(0.1f))
+            
             Box(
                 modifier = Modifier
-                    .size(100.dp)
-                    .scale(scale)
-                    .background(Color(0xFF5B4BD6), CircleShape)
-                    .border(2.dp, Color(0xFF7B6FE6), CircleShape),
+                    .size(200.dp)
+                    .semantics { contentDescription = "LinkDeck logo animation" },
                 contentAlignment = Alignment.Center
             ) {
+                Box(modifier = Modifier.size(200.dp).border(1.dp, Color(0xFF2B2650), CircleShape))
+                Box(modifier = Modifier.size(150.dp).border(1.dp, Color(0xFF4A4290), CircleShape))
+                Box(
+                    modifier = Modifier
+                        .size(100.dp)
+                        .scale(scale)
+                        .background(Color(0xFF5B4BD6), CircleShape)
+                        .border(2.dp, Color(0xFF7B6FE6), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "LD",
+                        color = Color.White,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Text(
+                text = "LinkDeck",
+                color = Color(0xFFEDEBFF),
+                fontSize = 36.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.5.sp
+            )
+            
+            Text(
+                text = "اختر وضع التشغيل لهذا الجهاز",
+                color = Color(0xFFA9A4CF),
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                lineHeight = 26.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Button(
+                onClick = { vm.setMode(AppMode.HOST, onModeChosen) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp)
+                    .semantics { contentDescription = "Select Host mode for phone" },
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5B4BD6))
+            ) {
                 Text(
-                    "LD",
-                    color = Color.White,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.ExtraBold
+                    text = "جهاز مضيف (Host)",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.5.sp
                 )
             }
-        }
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        Text(
-            text = "LinkDeck",
-            color = Color(0xFFEDEBFF),
-            fontSize = 36.sp,
-            fontWeight = FontWeight.ExtraBold,
-            letterSpacing = 1.5.sp
-        )
-        
-        Text(
-            text = "اختر وضع التشغيل لهذا الجهاز",
-            color = Color(0xFFA9A4CF),
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Medium,
-            lineHeight = 26.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // زرار Host
-        Button(
-            onClick = { vm.setMode(AppMode.HOST, onModeChosen) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(64.dp)
-                .semantics { contentDescription = "Select Host mode for phone" },
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5B4BD6))
-        ) {
+            
+            OutlinedButton(
+                onClick = { vm.setMode(AppMode.CONTROLLER, onModeChosen) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp)
+                    .semantics { contentDescription = "Select Controller mode for tablet" },
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFB9AFFF)),
+                border = BorderStroke(1.5.dp, Color(0xFF2B2650))
+            ) {
+                Text(
+                    text = "جهاز متحكم (Controller)",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.5.sp
+                )
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            // ✅ توقيع BFB.AI (القسم 16: Splash)
             Text(
-                text = "جهاز مضيف (Host)",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.5.sp
-            )
-        }
-        
-        // زرار Controller
-        OutlinedButton(
-            onClick = { vm.setMode(AppMode.CONTROLLER, onModeChosen) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(64.dp)
-                .semantics { contentDescription = "Select Controller mode for tablet" },
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFB9AFFF)),
-            border = BorderStroke(1.5.dp, Color(0xFF2B2650))
-        ) {
-            Text(
-                text = "جهاز متحكم (Controller)",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.5.sp
+                text = "Built with BFB.AI",
+                color = Color(0xFFA9A4CF).copy(alpha = 0.6f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(bottom = 16.dp)
             )
         }
     }
