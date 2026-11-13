@@ -36,13 +36,13 @@ fun ControllerHomeScreen(
     onNavigate: (String) -> Unit,
     onOpenPermissions: () -> Unit,
     onOpenSettings: () -> Unit,
-    onBack: () -> Unit // ✅ ضفنا باراميتر الرجوع
+    onBack: () -> Unit
 ) {
     val vm: ControllerHomeViewModel = hiltViewModel()
     val connectionState by vm.connectionManager.state.collectAsState()
 
     Column(Modifier.fillMaxSize().padding(Spacing.xxl)) {
-        // ✅ شريط علوي فيه زرار الرجوع والعنوان
+        // شريط علوي فيه زرار الرجوع والعنوان
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(
@@ -63,7 +63,7 @@ fun ControllerHomeScreen(
         
         Spacer(Modifier.height(Spacing.xxl))
 
-        // ✅ أزرار الوظائف اللي بتظهر بعد الاتصال
+        // أزرار الوظائف اللي بتظهر بعد الاتصال
         if (connectionState is ConnectionState.Connected) {
             Text("الوظائف المتاحة", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(Spacing.md))
