@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,6 +39,7 @@ fun HostHomeScreen(
     onOpenProWizard: () -> Unit,
     onOpenPermissions: () -> Unit,
     onOpenSettings: () -> Unit,
+    onBack: () -> Unit // ✅
 ) {
     val vm: HostHomeViewModel = hiltViewModel()
     val hostEvent by vm.hostServer.events.collectAsState()
@@ -47,6 +50,13 @@ fun HostHomeScreen(
             Modifier.fillMaxSize().padding(Spacing.xxl),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            // ✅ زرار الرجوع
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+            }
+
             Spacer(Modifier.height(Spacing.xxl))
             Box(contentAlignment = Alignment.Center) {
                 Surface(
