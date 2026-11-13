@@ -38,6 +38,7 @@ fun HostHomeScreen(
     onOpenProWizard: () -> Unit,
     onOpenPermissions: () -> Unit,
     onOpenSettings: () -> Unit,
+    onBack: () -> Unit,
 ) {
     val vm: HostHomeViewModel = hiltViewModel()
     val hostEvent by vm.hostServer.events.collectAsState()
