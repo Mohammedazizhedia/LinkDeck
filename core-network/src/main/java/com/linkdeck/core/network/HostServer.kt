@@ -1,4 +1,5 @@
 package com.linkdeck.core.network
+
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
@@ -18,55 +19,66 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+
 sealed interface HostEvent {
     data class ControllerConnected(val deviceId: String) : HostEvent
     data class ControllerDisconnected(val deviceId: String) : HostEvent
 }
+
 class HostServer(
     private val identity: TlsIdentity,
+    private val fileTransferManager: FileTransferManager, // ✅ تم التعديل هنا
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
     private var server: ApplicationEngine? = null
     private val _events = MutableStateFlow<HostEvent?>(null)
     val events: StateFlow<HostEvent?> = _events
+
     @Volatile private var qrToken: String? = null
     @Volatile private var qrTokenExpiresAt: Long = 0L
     private val deviceTokens = ConcurrentHashMap<String, String>()
     private val sessions = ConcurrentHashMap<String, DefaultWebSocketServerSession>()
-    
-    // إدارة نقل الملفات
-    val fileTransferManager = FileTransferManager(scope)
 
     @Volatile
     var commandHandler: ((String) -> String?)? = null
+
     @Volatile
     private var p2pCode: String? = null
+
     fun newP2pCode(): String {
         val code = (100000..999999).random().toString()
         p2pCode = code
         return code
     }
+
     private fun isP2pCodeValid(code: String): Boolean = p2pCode != null && p2pCode == code
+
     @Volatile
     var boundPort: Int = -1
         private set
+
     val connectedCount: Int get() = sessions.size
     val isRunning: Boolean get() = server != null
+
     fun newPairingToken(validityMillis: Long = 120_000L): String {
         val token = UUID.randomUUID().toString().replace("-", "")
         qrToken = token
         qrTokenExpiresAt = System.currentTimeMillis() + validityMillis
         return token
     }
+
     fun isQrTokenValid(token: String): Boolean {
         val t = qrToken ?: return false
         return t == token && System.currentTimeMillis() < qrTokenExpiresAt
     }
+
     fun pairedDeviceIds(): Set<String> = deviceTokens.keys.toSet()
+
     fun revokeDevice(deviceId: String) {
         deviceTokens.remove(deviceId)
         sessions.remove(deviceId)?.let { s -> scope.launch { runCatching { s.close() } } }
     }
+
     fun start(): Int {
         check(server == null) { "HostServer already started" }
         val port = findFreePort()
@@ -89,6 +101,7 @@ class HostServer(
         DebugLog.log("Host", "server started on port $boundPort")
         return boundPort
     }
+
     private fun Application.appModule() {
         install(ContentNegotiation) { json() }
         install(WebSockets)
@@ -120,12 +133,14 @@ class HostServer(
             }
         }
     }
+
     private suspend fun DefaultWebSocketServerSession.authenticate(): String? {
         val first = incoming.receive() as? Frame.Text ?: return reject("no auth frame")
         val raw = first.readText()
         val auth = runCatching {
             kotlinx.serialization.json.Json.decodeFromString<AuthMessage>(raw)
         }.getOrNull()
+
         if (auth == null) {
             val p2p = runCatching {
                 kotlinx.serialization.json.Json.decodeFromString(P2pPair.serializer(), raw)
@@ -148,6 +163,7 @@ class HostServer(
             }
             return reject("malformed auth")
         }
+
         DebugLog.log("Host", "auth attempt token=${auth.token.take(10)} valid=${isQrTokenValid(auth.token)}")
         val deviceId = UUID.randomUUID().toString().replace("-", "")
         return when {
@@ -167,11 +183,13 @@ class HostServer(
             else -> reject("invalid or expired token")
         }
     }
+
     private suspend fun DefaultWebSocketServerSession.reject(reason: String): String? {
         send(Frame.Text(kotlinx.serialization.json.Json.encodeToString(AuthError.serializer(), AuthError(reason = reason))))
         close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, reason))
         return null
     }
+
     private fun handleText(deviceId: String, text: String) {
         if (text.contains("\"ping\"")) {
             scope.launch { runCatching { sessions[deviceId]?.send(Frame.Text(text)) } }
@@ -180,7 +198,7 @@ class HostServer(
         val env = runCatching {
             kotlinx.serialization.json.Json.decodeFromString(Envelope.serializer(), text)
         }.getOrNull() ?: return
-        
+
         when (env.type) {
             "file_list" -> {
                 val req = runCatching {
@@ -213,13 +231,8 @@ class HostServer(
                 val req = runCatching {
                     kotlinx.serialization.json.Json.decodeFromString(FileTransferInitReq.serializer(), env.payload)
                 }.getOrNull() ?: return
-                // التحقق من الملف الموجود لاستئناف النقل
                 val file = java.io.File(HostFileOps.getRootPath(), req.path)
-                val resumeOffset = if (file.exists()) {
-                    file.length()
-                } else {
-                    0L
-                }
+                val resumeOffset = if (file.exists()) file.length() else 0L
                 val res = FileTransferInitRes(ok = true, resumeOffset = resumeOffset)
                 reply(deviceId, env.id, "file_transfer_init_res",
                     kotlinx.serialization.json.Json.encodeToString(FileTransferInitRes.serializer(), res))
@@ -228,7 +241,6 @@ class HostServer(
                 val req = runCatching {
                     kotlinx.serialization.json.Json.decodeFromString(FileTransferChunkReq.serializer(), env.payload)
                 }.getOrNull() ?: return
-                // في هذا الإصدار، نستخدم writeChunk من HostFileOps
                 val writeRes = HostFileOps.writeChunk(req.path, req.offset, req.dataBase64)
                 val res = if (writeRes.ok) {
                     FileTransferChunkRes(ok = true, received = writeRes.size)
@@ -242,7 +254,6 @@ class HostServer(
                 val req = runCatching {
                     kotlinx.serialization.json.Json.decodeFromString(FileTransferCancelReq.serializer(), env.payload)
                 }.getOrNull() ?: return
-                // إلغاء النقل (لو كنا بنستخدم FileTransferManager)
                 val res = FileTransferCancelRes(ok = true)
                 reply(deviceId, env.id, "file_transfer_cancel_res",
                     kotlinx.serialization.json.Json.encodeToString(FileTransferCancelRes.serializer(), res))
@@ -256,12 +267,14 @@ class HostServer(
             else -> Unit
         }
     }
+
     private fun reply(deviceId: String, id: Long, type: String, payload: String) {
         val msg = runCatching {
             kotlinx.serialization.json.Json.encodeToString(Envelope.serializer(), Envelope(id, type, payload))
         }.getOrNull() ?: return
         scope.launch { runCatching { sessions[deviceId]?.send(Frame.Text(msg)) } }
     }
+
     fun broadcast(type: String, payloadJson: String) {
         val msg = runCatching {
             kotlinx.serialization.json.Json.encodeToString(Envelope.serializer(), Envelope(0, type, payloadJson))
@@ -270,12 +283,14 @@ class HostServer(
             sessions.values.forEach { runCatching { it.send(Frame.Text(msg)) } }
         }
     }
+
     fun stop() {
         server?.let { runCatching { it.stop(500L, 1500L) } }
         server = null
         boundPort = -1
         sessions.clear()
     }
+
     private fun findFreePort(): Int {
         runCatching { ServerSocket(P2P_PORT).use { return P2P_PORT } }
         for (attempt in 0 until 20) {
