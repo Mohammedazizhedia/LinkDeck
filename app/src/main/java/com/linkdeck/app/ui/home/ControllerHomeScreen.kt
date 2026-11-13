@@ -1,10 +1,16 @@
 package com.linkdeck.app.ui.home
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import com.linkdeck.app.R
@@ -38,11 +44,43 @@ fun ControllerHomeScreen(
         ConnectionStatusLine(state = connectionState)
         Spacer(Modifier.height(Spacing.xl))
 
+        // زرار المسح والإعدادات
         Button(onClick = onScanQr) { Text(stringResource(R.string.scan_qr)) }
         Spacer(Modifier.height(Spacing.sm))
         TextButton(onClick = onOpenPermissions) { Text(stringResource(R.string.permissions)) }
         
         Spacer(Modifier.height(Spacing.xxl))
+
+        // ✅ أزرار الوظائف اللي بتظهر بعد الاتصال
+        if (connectionState is ConnectionState.Connected) {
+            Text("الوظائف المتاحة", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(Spacing.md))
+            
+            val features = listOf(
+                "Mirror" to "mirror",
+                "Files" to "files",
+                "Notifications" to "notifications",
+                "Messages" to "messages",
+                "Calls" to "calls",
+                "Apps" to "apps"
+            )
+            
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                verticalArrangement = Arrangement.spacedBy(Spacing.md)
+            ) {
+                items(features) { (label, route) ->
+                    OutlinedButton(
+                        onClick = { onNavigate(route) },
+                        modifier = Modifier.fillMaxWidth().height(60.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(label)
+                    }
+                }
+            }
+        }
     }
 }
 
