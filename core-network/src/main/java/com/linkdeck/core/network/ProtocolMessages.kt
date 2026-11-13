@@ -10,14 +10,6 @@ val ProtoJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 data class Envelope(val id: Long = 0, val type: String, val payload: String = "{}")
 
 // ---- auth messages ----
-@Serializable
-data class AuthMessage(val token: String)
-
-@Serializable
-data class AuthOk(val deviceId: String, val deviceToken: String)
-
-@Serializable
-data class AuthError(val reason: String)
 
 // ---- files ----
 @Serializable
